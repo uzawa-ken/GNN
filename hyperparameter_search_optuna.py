@@ -200,144 +200,120 @@ def objective(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Optuna によるハイパーパラメータ探索")
-    parser.add_argument("--data_dir", default=gnn.DATA_DIR, help="学習データのディレクトリ")
-    parser.add_argument("--trials", type=int, default=10, help="試行回数")
-    parser.add_argument("--num_epochs", type=int, default=200, help="1 試行あたりのエポック数")
+    parser.add_argument("--data_dir", default=gnn.DATA_DIR)
+    parser.add_argument("--trials", type=int, default=10)
+    parser.add_argument("--num_epochs", type=int, default=200)
     parser.add_argument(
         "--max_num_cases",
         type=int,
         default=30,
-        help="探索時に使用する (time, rank) ペアの最大件数",
     )
     parser.add_argument(
         "--train_fraction",
         type=float,
         default=0.8,
-        help="探索時の train/val 分割比率",
     )
     parser.add_argument(
         "--random_seed",
         type=int,
         default=42,
-        help="乱数シード（Optuna と学習の再現性用）",
     )
     parser.add_argument(
         "--log_file",
         type=Path,
         default=Path("optuna_trials_history.tsv"),
-        help="試行番号と検証誤差を逐次追記するログファイルのパス",
     )
     parser.add_argument(
         "--lazy_loading",
         action="store_true",
         default=True,
-        help="遅延GPU転送を有効化（デフォルト: 有効）",
     )
     parser.add_argument(
         "--no_lazy_loading",
         action="store_true",
-        help="遅延GPU転送を無効化",
     )
     parser.add_argument(
         "--amp",
         action="store_true",
         default=True,
-        help="混合精度学習 (AMP) を有効化（デフォルト: 有効）",
     )
     parser.add_argument(
         "--no_amp",
         action="store_true",
-        help="混合精度学習 (AMP) を無効化",
     )
     parser.add_argument(
         "--cache",
         action="store_true",
         default=True,
-        help="データキャッシュを有効化（デフォルト: 有効）",
     )
     parser.add_argument(
         "--no_cache",
         action="store_true",
-        help="データキャッシュを無効化（毎回ファイルから読み込む）",
     )
     parser.add_argument(
         "--cache_dir",
         type=str,
         default=".cache",
-        help="キャッシュファイルの保存先ディレクトリ（デフォルト: .cache）",
     )
     parser.add_argument(
         "--lambda_gauge",
         type=float,
         default=0.01,
-        help="ゲージ正則化係数（教師なし学習時の定数モード抑制用、デフォルト: 0.01）",
     )
     parser.add_argument(
         "--search_lambda_gauge",
         action="store_true",
-        help="ゲージ正則化係数も Optuna で探索する",
     )
     parser.add_argument(
         "--no_mesh_quality_weights",
         action="store_true",
-        help="メッシュ品質重みを無効化（全セル等重み w=1）",
     )
     parser.add_argument(
         "--no_diagonal_scaling",
         action="store_true",
-        help="対角スケーリングを無効化（条件数改善を行わない）",
     )
     parser.add_argument(
         "--lambda_data_min",
         type=float,
         default=1e-3,
-        help="lambda_data の探索下限（デフォルト: 1e-3）。0 を指定すると固定値 0（完全な教師なし学習）",
     )
     parser.add_argument(
         "--lambda_data_max",
         type=float,
         default=1.0,
-        help="lambda_data の探索上限（デフォルト: 1.0）",
     )
     parser.add_argument(
         "--lambda_pde_min",
         type=float,
         default=0.0,
-        help="lambda_pde の探索下限（デフォルト: 0.01）。0 を指定すると固定値 0（完全な教師あり学習）",
     )
     parser.add_argument(
         "--lambda_pde_max",
         type=float,
         default=0.0,
-        help="lambda_pde の探索上限（デフォルト: 10.0）",
     )
     parser.add_argument(
         "--early_stopping",
         action="store_true",
         default=True,
-        help="アーリーストッピングを有効化（デフォルト: 有効）",
     )
     parser.add_argument(
         "--no_early_stopping",
         action="store_true",
-        help="アーリーストッピングを無効化",
     )
     parser.add_argument(
         "--early_stopping_patience",
         type=int,
         default=50,
-        help="アーリーストッピングの patience（デフォルト: 50）",
     )
     parser.add_argument(
         "--use_one_cycle_lr",
         action="store_true",
-        help="OneCycleLR スケジューラを使用（高速収束用）",
     )
     parser.add_argument(
         "--one_cycle_max_lr",
         type=float,
         default=1e-2,
-        help="OneCycleLR の最大学習率（デフォルト: 1e-2）",
     )
 
     args = parser.parse_args()
@@ -370,8 +346,8 @@ def main() -> None:
             "lambda_data と lambda_pde が両方とも 0 に設定"
         )
 
-    print(f"[INFO] lambda_data: [{args.lambda_data_min}, {args.lambda_data_max}]")
-    print(f"[INFO] lambda_pde: [{args.lambda_pde_min}, {args.lambda_pde_max}]")
+    print(f"[INFO] データ損失の重みの範囲: [{args.lambda_data_min}, {args.lambda_data_max}]")
+    print(f"[INFO] PDE 損失の重みの範囲: [{args.lambda_pde_min}, {args.lambda_pde_max}]")
 
     study.optimize(
         lambda trial: objective(

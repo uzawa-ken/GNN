@@ -1289,10 +1289,10 @@ def train_gnn_auto_trainval_pde_weighted(
 
             if epochs_without_improvement >= EARLY_STOPPING_PATIENCE:
                 log_print(f"\n[EARLY STOPPING] {EARLY_STOPPING_PATIENCE} エポック改善なし。"
-                         f"ベストエポック: {best_epoch} (metric={best_val_metric:.4e})")
+                         f"ベストエポック: {best_epoch} (metric: {best_val_metric:.4e})")
                 if best_model_state is not None:
                     model.load_state_dict(best_model_state)
-                    log_print(f"[INFO] ベストモデル (epoch={best_epoch}) を復元しました。")
+                    log_print(f"[INFO] ベストモデル (エポック: {best_epoch}) を復元")
                 break
 
         if epoch % PLOT_INTERVAL == 0 or epoch == 1:
@@ -1324,7 +1324,7 @@ def train_gnn_auto_trainval_pde_weighted(
                 update_plot(fig, axes, history)
 
             log = (
-                f"[Epoch: {epoch:5d}] ロス: {loss_value:.4e}, "
+                f"[エポック: {epoch:5d}] ロス: {loss_value:.4e}, "
                 f"学習率: {current_lr:.3e}, "
                 f"データ損失: {LAMBDA_DATA * avg_data_loss:.4e}, "
                 f"PDE 損失: {LAMBDA_PDE * avg_pde_loss:.4e}, "
@@ -1365,7 +1365,7 @@ def train_gnn_auto_trainval_pde_weighted(
         LOGGER_FILE.close()
         LOGGER_FILE = None
 
-    log_print("\n=== 最終診断 (訓練データ) ===")
+    log_print("\n=== 検証結果 (訓練データ) ===")
     model.eval()
 
     for cs in cases_train:
@@ -1434,22 +1434,22 @@ def train_gnn_auto_trainval_pde_weighted(
 
         if has_x_true and x_true is not None:
             log_print(
-                f"  [訓練] ケース (時刻={time_str}, ランク={rank_str}): "
-                f"相対誤差 = {rel_err.item():.4e}, RMSE = {rmse.item():.4e}, "
-                f"重み付き残差 = {R_pred_w.item():.4e}"
+                f"時刻: {time_str}, ランク番号: {rank_str}): "
+                f"相対誤差: {rel_err.item():.4e}, RMSE: {rmse.item():.4e}, "
+                f"重み付き残差: {R_pred_w.item():.4e}"
             )
-            log_print(f"    真値: 最小={x_true.min().item():.6e}, 最大={x_true.max().item():.6e}, "
-                  f"平均={x_true.mean().item():.6e}, ノルム={torch.norm(x_true).item():.6e}")
-            log_print(f"    予測値: 最小={x_pred.min().item():.6e}, 最大={x_pred.max().item():.6e}, "
-                  f"平均={x_pred.mean().item():.6e}, ノルム={torch.norm(x_pred).item():.6e}")
-            log_print(f"    正規化予測値: 最小={x_pred_norm.min().item():.6e}, "
-                  f"最大={x_pred_norm.max().item():.6e}, 平均={x_pred_norm.mean().item():.6e}")
+            log_print(f"    真値最小値: {x_true.min().item():.6e}, 真値最大値: {x_true.max().item():.6e}, "
+                  f"平均: {x_true.mean().item():.6e}, ノルム: {torch.norm(x_true).item():.6e}")
+            log_print(f"    予測値最小値: {x_pred.min().item():.6e}, 予測値最大値: {x_pred.max().item():.6e}, "
+                  f"平均: {x_pred.mean().item():.6e}, ノルム={torch.norm(x_pred).item():.6e}")
+            log_print(f"    正規化予測値最小値: {x_pred_norm.min().item():.6e}, "
+                  f"正規化予測値最大値:{x_pred_norm.max().item():.6e}, 平均: {x_pred_norm.mean().item():.6e}")
             log_print(f"    差分 (予測値 - 真値): ノルム={torch.norm(diff).item():.6e}")
-            log_print(f"    正規化パラメータ: 平均={x_mean_t.item():.6e}, 標準偏差={x_std_t.item():.6e}")
+            log_print(f"    正規化パラメータの平均: {x_mean_t.item():.6e}, 標準偏差: {x_std_t.item():.6e}")
 
-            log_print("    [PDE残差比較 (OpenFOAMとの比較)]")
+            log_print("    [PDE 残差の比較 (OpenFOAM との比較)]")
             log_print(
-                "      GNN予測: "
+                "      GNN 予測: "
                 f"||r||_2={norm_r_pred.item():.6e}, "
                 f"max|r_i|={max_abs_r_pred.item():.6e}, "
                 f"||r||/||b||={R_pred_over_b.item():.5f}, "
@@ -1462,27 +1462,19 @@ def train_gnn_auto_trainval_pde_weighted(
                 f"||r||/||b||={R_true_over_b.item():.5f}, "
                 f"||r||/||Ax||={R_true_over_Ax.item():.5f}"
             )
-
-            a, b_fit, rmse_before, rmse_after = compute_affine_fit(x_true, x_pred)
-            log_print(
-                f"    [アフィンフィッティング 予測値→真値] "
-                f"a={a:.3e}, b={b_fit:.3e}, "
-                f"補正前RMSE={rmse_before:.3e}, 補正後RMSE={rmse_after:.3e}, "
-                f"RMSE比率={rmse_after / rmse_before:.3f}"
-            )
         else:
             log_print(
-                f"  [訓練] ケース (時刻={time_str}, ランク={rank_str}) [教師なし学習]: "
-                f"重み付き残差 = {R_pred_w.item():.4e}"
+                f"時刻: {time_str}, ランク番号: {rank_str}) [教師なし学習]: "
+                f"重み付き残差: {R_pred_w.item():.4e}"
             )
-            log_print(f"    予測値: 最小={x_pred.min().item():.6e}, 最大={x_pred.max().item():.6e}, "
-                  f"平均={x_pred.mean().item():.6e}, ノルム={torch.norm(x_pred).item():.6e}")
+            log_print(f"予測値最小値: {x_pred.min().item():.6e}, 予測値最大値: {x_pred.max().item():.6e}, "
+                  f"平均: {x_pred.mean().item():.6e}, ノルム: {torch.norm(x_pred).item():.6e}")
             log_print(
                 "    [PDE残差 (GNN)]"
-                f" ||r||_2={norm_r_pred.item():.6e}, "
-                f"max|r_i|={max_abs_r_pred.item():.6e}, "
-                f"||r||/||b||={R_pred_over_b.item():.5f}, "
-                f"||r||/||Ax||={R_pred_over_Ax.item():.5f}"
+                f" ||r||_2: {norm_r_pred.item():.6e}, "
+                f"max|r_i|: {max_abs_r_pred.item():.6e}, "
+                f"||r||/||b||: {R_pred_over_b.item():.5f}, "
+                f"||r||/||Ax||: {R_pred_over_Ax.item():.5f}"
             )
 
         x_pred_np = x_pred.cpu().numpy().reshape(-1)
@@ -1516,7 +1508,7 @@ def train_gnn_auto_trainval_pde_weighted(
                 torch.cuda.empty_cache()
 
     if num_val > 0:
-        log_print("\n=== 最終診断 (検証データ) ===")
+        log_print("\n=== 検証結果 (テストデータ) ===")
 
         for cs in cases_val:
             time_str   = cs["time"]
@@ -1584,55 +1576,47 @@ def train_gnn_auto_trainval_pde_weighted(
 
             if has_x_true and x_true is not None:
                 log_print(
-                    f"  [検証] ケース (時刻={time_str}, ランク={rank_str}): "
-                    f"相対誤差 = {rel_err.item():.4e}, RMSE = {rmse.item():.4e}, "
-                    f"重み付き残差 = {R_pred_w.item():.4e}"
+                    f"時刻: {time_str}, ランク番号: {rank_str}): "
+                    f"相対誤差: {rel_err.item():.4e}, RMSE: {rmse.item():.4e}, "
+                    f"重み付き残差: {R_pred_w.item():.4e}"
                 )
-                log_print(f"    真値: 最小={x_true.min().item():.6e}, 最大={x_true.max().item():.6e}, "
-                      f"平均={x_true.mean().item():.6e}, ノルム={torch.norm(x_true).item():.6e}")
-                log_print(f"    予測値: 最小={x_pred.min().item():.6e}, 最大={x_pred.max().item():.6e}, "
-                      f"平均={x_pred.mean().item():.6e}, ノルム={torch.norm(x_pred).item():.6e}")
-                log_print(f"    正規化予測値: 最小={x_pred_norm.min().item():.6e}, "
-                      f"最大={x_pred_norm.max().item():.6e}, 平均={x_pred_norm.mean().item():.6e}")
-                log_print(f"    差分 (予測値 - 真値): ノルム={torch.norm(diff).item():.6e}")
-                log_print(f"    正規化パラメータ: 平均={x_mean_t.item():.6e}, 標準偏差={x_std_t.item():.6e}")
+                log_print(f"真値最小値: {x_true.min().item():.6e}, 真値最大値: {x_true.max().item():.6e}, "
+                      f"平均: {x_true.mean().item():.6e}, ノルム: {torch.norm(x_true).item():.6e}")
+                log_print(f"予測値最小値: {x_pred.min().item():.6e}, 予測値最大値: {x_pred.max().item():.6e}, "
+                      f"平均: {x_pred.mean().item():.6e}, ノルム: {torch.norm(x_pred).item():.6e}")
+                log_print(f"正規化予測値最小値: {x_pred_norm.min().item():.6e}, "
+                      f"正規化予測値最大値: {x_pred_norm.max().item():.6e}, 平均: {x_pred_norm.mean().item():.6e}")
+                log_print(f"差分 (予測値 - 真値): ノルム: {torch.norm(diff).item():.6e}")
+                log_print(f"正規化パラメータ: 平均: {x_mean_t.item():.6e}, 標準偏差: {x_std_t.item():.6e}")
 
-                log_print("    [PDE残差比較 (OpenFOAMとの比較)]")
+                log_print("    [PDE 残差の比較 (OpenFOAM との比較)]")
                 log_print(
-                    "      GNN予測: "
-                    f"||r||_2={norm_r_pred.item():.6e}, "
-                    f"max|r_i|={max_abs_r_pred.item():.6e}, "
-                    f"||r||/||b||={R_pred_over_b.item():.5f}, "
-                    f"||r||/||Ax||={R_pred_over_Ax.item():.5f}"
+                    "      GNN 予測: "
+                    f"||r||_2: {norm_r_pred.item():.6e}, "
+                    f"max|r_i|: {max_abs_r_pred.item():.6e}, "
+                    f"||r||/||b||: {R_pred_over_b.item():.5f}, "
+                    f"||r||/||Ax||: {R_pred_over_Ax.item():.5f}"
                 )
                 log_print(
                     "      OpenFOAM: "
-                    f"||r||_2={norm_r_true.item():.6e}, "
-                    f"max|r_i|={max_abs_r_true.item():.6e}, "
-                    f"||r||/||b||={R_true_over_b.item():.5f}, "
-                    f"||r||/||Ax||={R_true_over_Ax.item():.5f}"
-                )
-
-                a, b_fit, rmse_before, rmse_after = compute_affine_fit(x_true, x_pred)
-                log_print(
-                    f"    [アフィンフィッティング 予測値→真値] "
-                    f"a={a:.3e}, b={b_fit:.3e}, "
-                    f"補正前RMSE={rmse_before:.3e}, 補正後RMSE={rmse_after:.3e}, "
-                    f"RMSE比率={rmse_after / rmse_before:.3f}"
+                    f"||r||_2: {norm_r_true.item():.6e}, "
+                    f"max|r_i|: {max_abs_r_true.item():.6e}, "
+                    f"||r||/||b||: {R_true_over_b.item():.5f}, "
+                    f"||r||/||Ax||: {R_true_over_Ax.item():.5f}"
                 )
             else:
                 log_print(
-                    f"  [検証] ケース (時刻={time_str}, ランク={rank_str}) [教師なし学習]: "
-                    f"重み付き残差 = {R_pred_w.item():.4e}"
+                    f"時刻: {time_str}, ランク番号: {rank_str}) [教師なし学習]: "
+                    f"重み付き残差: {R_pred_w.item():.4e}"
                 )
-                log_print(f"    予測値: 最小={x_pred.min().item():.6e}, 最大={x_pred.max().item():.6e}, "
+                log_print(f"予測値最小値: {x_pred.min().item():.6e}, 予測値最大値: {x_pred.max().item():.6e}, "
                       f"平均={x_pred.mean().item():.6e}, ノルム={torch.norm(x_pred).item():.6e}")
                 log_print(
                     "    [PDE残差 (GNN)]"
-                    f" ||r||_2={norm_r_pred.item():.6e}, "
-                    f"max|r_i|={max_abs_r_pred.item():.6e}, "
-                    f"||r||/||b||={R_pred_over_b.item():.5f}, "
-                    f"||r||/||Ax||={R_pred_over_Ax.item():.5f}"
+                    f" ||r||_2: {norm_r_pred.item():.6e}, "
+                    f"max|r_i|: {max_abs_r_pred.item():.6e}, "
+                    f"||r||/||b||: {R_pred_over_b.item():.5f}, "
+                    f"||r||/||Ax||: {R_pred_over_Ax.item():.5f}"
                 )
 
             x_pred_np = x_pred.cpu().numpy().reshape(-1)
