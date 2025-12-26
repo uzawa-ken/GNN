@@ -416,21 +416,26 @@ class SimpleSAGE(nn.Module):
             self.norms.append(nn.LayerNorm(hidden_channels))
 
         self.output_norm = nn.LayerNorm(hidden_channels)
-        self.convs.append(SAGEConv(hidden_channels, 1))
+        self.output_proj = nn.Linear(hidden_channels, 1)
 
     def forward(self, x, edge_index):
         x = self.input_proj(x)
         x = F.gelu(x)
 
-        for i, (conv, norm) in enumerate(zip(self.convs[:-1], self.norms)):
+        layer_outputs = [x]
+
+        for i, (conv, norm) in enumerate(zip(self.convs, self.norms)):
             x_res = x
             x = norm(x)
             x = conv(x, edge_index)
             x = F.gelu(x)
             x = x + x_res
+            layer_outputs.append(x)
+
+        x = torch.stack(layer_outputs, dim=0).max(dim=0)[0]
 
         x = self.output_norm(x)
-        x = self.convs[-1](x, edge_index)
+        x = self.output_proj(x)
         return x.view(-1)
 
 def matvec_csr_torch(row_ptr, col_ind, vals, row_idx, x):
