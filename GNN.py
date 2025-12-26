@@ -904,7 +904,7 @@ def train_gnn_auto_trainval_pde_weighted(
             raise RuntimeError("nFeatures が一致していない")
 
     total_cells = sum(rc["feats_np"].shape[0] for rc in raw_cases_train + raw_cases_val)
-    log_print(f"[INFO] 特徴量数: {nFeat}, 総セル数: {total_cells}")
+    log_print(f"[INFO] 幾何特徴量数: {nFeat}, 総セル数: {total_cells}")
 
     cases_with_x = [rc for rc in (raw_cases_train + raw_cases_val) if rc.get("has_x_true", False)]
     unsupervised_mode = len(cases_with_x) == 0
@@ -975,12 +975,6 @@ def train_gnn_auto_trainval_pde_weighted(
             x_mean_rank[r] = mean_r
             x_std_rank[r]  = std_r
 
-    for r in range(num_ranks):
-        log_print(
-            f"  ランク番号:{r}: カウント:{counts[r]}, "
-            f"平均:{x_mean_rank[r]:.3e}, 分散:{x_std_rank[r]:.3e}"
-        )
-
     x_mean_rank_t = torch.from_numpy(x_mean_rank.astype(np.float32)).to(device)
     x_std_rank_t  = torch.from_numpy(x_std_rank.astype(np.float32)).to(device)
 
@@ -1017,7 +1011,8 @@ def train_gnn_auto_trainval_pde_weighted(
         p90    = float(np.percentile(w_all, 90))
         p99    = float(np.percentile(w_all, 99))
 
-        log_print(f"  カウント : {w_all.size}")
+        log_print(f"メッシュ品質")
+        log_print(f"  セル数   : {w_all.size}")
         log_print(f"  最小値   : {w_min:.3e}")
         log_print(f"  平均値   : {w_mean:.3e}")
         log_print(f"  最大値   : {w_max:.3e}")
