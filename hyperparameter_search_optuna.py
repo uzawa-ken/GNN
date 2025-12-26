@@ -29,7 +29,7 @@ import numpy as np
 
 try:
     import optuna
-except ImportError as exc:  # pragma: no cover - ユーザー環境でのみ発生しうるため
+except ImportError as exc:
     raise RuntimeError(
         "pip install optuna!"
     ) from exc
@@ -211,7 +211,7 @@ def objective(
 
     history = gnn.train_gnn_auto_trainval_pde_weighted(
         data_dir,
-        enable_plot=False,          # 探索中はリアルタイムプロットもオフ
+        enable_plot=False,
         return_history=True,
     )
 
@@ -392,7 +392,7 @@ def main() -> None:
     gnn.USE_ONE_CYCLE_LR = args.use_one_cycle_lr
     gnn.ONE_CYCLE_MAX_LR = args.one_cycle_max_lr
     if args.use_one_cycle_lr:
-        gnn.USE_LR_SCHEDULER = False  # ReduceLROnPlateau を無効化
+        gnn.USE_LR_SCHEDULER = False
 
     sampler = optuna.samplers.TPESampler(seed=args.random_seed)
     study = optuna.create_study(direction="minimize", sampler=sampler)
@@ -450,8 +450,8 @@ def main() -> None:
 
     gnn.train_gnn_auto_trainval_pde_weighted(
         args.data_dir,
-        enable_plot=False,          # 学習曲線のポップアップが不要なら False
-        return_history=False,       # ここでは履歴は使わないので False
+        enable_plot=False,
+        return_history=False,
     )
 
 
