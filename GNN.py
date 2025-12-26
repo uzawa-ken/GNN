@@ -1052,7 +1052,6 @@ def train_gnn_auto_trainval_pde_weighted(
             factor=LR_SCHED_FACTOR,
             patience=LR_SCHED_PATIENCE,
             min_lr=LR_SCHED_MIN_LR,
-            verbose=False,
         )
         scheduler_type = "plateau"
 
