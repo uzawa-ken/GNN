@@ -23,13 +23,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from typing import Optional
-from mpl_toolkits.mplot3d import Axes3D  # 3Dプロット用（projection="3d"で内部的に使用）
+from mpl_toolkits.mplot3d import Axes3D
 import time
 from datetime import datetime
 import pickle
 import hashlib
 from scipy.sparse import csr_matrix
-plt.rcParams['font.family'] = 'IPAexGothic'    # or 'Noto Sans CJK JP' など
+plt.rcParams['font.family'] = 'IPAexGothic'
 plt.rcParams['axes.unicode_minus'] = False
 
 try:
@@ -48,8 +48,8 @@ OUTPUT_DIR     = "./"
 NUM_EPOCHS     = 1000
 LR             = 1e-3
 WEIGHT_DECAY   = 1e-5
-MAX_NUM_CASES  = 100   # 自動検出した time のうち先頭 MAX_NUM_CASES 件を使用
-TRAIN_FRACTION = 0.8   # 全ケースのうち train に使う割合
+MAX_NUM_CASES  = 100
+TRAIN_FRACTION = 0.8
 HIDDEN_CHANNELS = 64
 NUM_LAYERS      = 4
 
@@ -58,40 +58,40 @@ LR_SCHED_FACTOR = 0.5
 LR_SCHED_PATIENCE = 20
 LR_SCHED_MIN_LR = 1e-6
 
-USE_ONE_CYCLE_LR = False  # True にすると ReduceLROnPlateau の代わりに OneCycleLR を使用
-ONE_CYCLE_MAX_LR = 1e-2   # OneCycleLR の最大学習率（LR の 10 倍程度が目安）
-ONE_CYCLE_PCT_START = 0.3  # 学習率を上げるフェーズの割合（0.3 = 最初の 30% で上昇）
+USE_ONE_CYCLE_LR = False
+ONE_CYCLE_MAX_LR = 1e-2
+ONE_CYCLE_PCT_START = 0.3
 
-USE_EARLY_STOPPING = True   # 検証誤差が改善しなくなったら学習を終了
-EARLY_STOPPING_PATIENCE = 50  # 改善がない場合に待つエポック数
-EARLY_STOPPING_MIN_DELTA = 1e-6  # 改善とみなす最小変化量（相対値）
+USE_EARLY_STOPPING = True
+EARLY_STOPPING_PATIENCE = 50
+EARLY_STOPPING_MIN_DELTA = 1e-6
 
 USE_LR_WARMUP = True
-LR_WARMUP_EPOCHS = 10  # ウォームアップするエポック数
+LR_WARMUP_EPOCHS = 10
 
 USE_GRAD_CLIP = True
-GRAD_CLIP_MAX_NORM = 1.0  # 勾配ノルムの最大値
+GRAD_CLIP_MAX_NORM = 1.0
 
-USE_LAZY_LOADING = True   # データをCPUに保持し、使用時のみGPUへ転送
-USE_AMP = True            # 混合精度学習（Automatic Mixed Precision）を有効化
+USE_LAZY_LOADING = True
+USE_AMP = True
 
-USE_DATA_CACHE = True     # データをキャッシュファイルに保存し、2回目以降は高速ロード
-CACHE_DIR = ".cache"      # キャッシュファイルの保存先ディレクトリ
+USE_DATA_CACHE = True
+CACHE_DIR = ".cache"
 
 LAMBDA_DATA = 0.1
-LAMBDA_PDE  = 0.01        # PDE損失の重み（relative正規化では ||r||²/||b||² ≈ 1-20 程度になるため小さめに設定）
-LAMBDA_GAUGE = 0.01       # ゲージ正則化係数（教師なし学習時の定数モード抑制用）
+LAMBDA_PDE  = 0.01
+LAMBDA_GAUGE = 0.01
 
-W_PDE_MAX = 10.0  # w_pde の最大値
-USE_MESH_QUALITY_WEIGHTS = True  # メッシュ品質重みを使用（Falseで全セル等重み w=1）
-USE_DIAGONAL_SCALING = True  # 対角スケーリングを適用（条件数改善のため）
+W_PDE_MAX = 10.0
+USE_MESH_QUALITY_WEIGHTS = True
+USE_DIAGONAL_SCALING = True
 PDE_LOSS_NORMALIZATION = "relative"
 
-EPS_DATA = 1e-12  # データ損失用 eps
-EPS_RES  = 1e-8   # 残差正規化用 eps（安定性のため大きめに設定）
-EPS_PLOT = 1e-12  # ★ログプロット用の下限値
+EPS_DATA = 1e-12
+EPS_RES  = 1e-8
+EPS_PLOT = 1e-12
 
-RANDOM_SEED = 42  # train/val をランダム分割するためのシード
+RANDOM_SEED = 42
 
 PLOT_INTERVAL = 10
 
@@ -120,7 +120,7 @@ def find_time_rank_list(data_dir: str):
         ├── processor2/gnn/
         │   ├── A_csr_{time}.dat
         │   ├── pEqn_{time}_rank2.dat
-        │   └── x_{time}_rank2.dat  # 省略可
+        │   └── x_{time}_rank2.dat
         ├── processor4/gnn/
         │   └── ...
         └── ...
@@ -135,7 +135,7 @@ def find_time_rank_list(data_dir: str):
 
     missing_pEqn = []
     missing_csr = []
-    missing_x = []  # 警告用（教師なし学習では必須ではない）
+    missing_x = []
 
     gnn_dirs = glob.glob(os.path.join(data_dir, "processor*", "gnn"))
 
@@ -483,7 +483,7 @@ def load_case_with_csr(gnn_dir: str, time_str: str, rank_str: str):
         "feats_np": feats_np,
         "edge_index_np": edge_index_np,
         "x_true_np": x_true_np,
-        "has_x_true": has_x_true,  # 教師データの有無フラグ
+        "has_x_true": has_x_true,
         "b_np": b_np,
         "row_ptr_np": row_ptr_np,
         "col_ind_np": col_ind_np,
@@ -519,11 +519,11 @@ class SimpleSAGE(nn.Module):
         x = F.relu(x)
 
         for i, (conv, norm) in enumerate(zip(self.convs[:-1], self.norms)):
-            x_res = x  # 残差接続用に保存
+            x_res = x
             x = conv(x, edge_index)
             x = norm(x)
             x = F.relu(x)
-            x = x + x_res  # 残差接続
+            x = x + x_res
 
         x = self.convs[-1](x, edge_index)
         return x.view(-1)
@@ -577,7 +577,7 @@ def estimate_condition_number(row_ptr_np, col_ind_np, vals_np, diag_np,
     lambda_max = 1.0
     for _ in range(max_iter):
         y = matvec_csr_numpy(row_ptr_np, col_ind_np, vals_np.astype(np.float64), x)
-        lambda_new = np.dot(x, y)  # Rayleigh quotient
+        lambda_new = np.dot(x, y)
         y_norm = np.linalg.norm(y) + eps
         x_new = y / y_norm
 
@@ -597,7 +597,7 @@ def estimate_condition_number(row_ptr_np, col_ind_np, vals_np, diag_np,
         Ax = matvec_csr_numpy(row_ptr_np, col_ind_np, vals_np.astype(np.float64), x)
         y = diag_inv * Ax
 
-        lambda_new = np.dot(x, y)  # Rayleigh quotient
+        lambda_new = np.dot(x, y)
         y_norm = np.linalg.norm(y) + eps
         x_new = y / y_norm
 
@@ -611,7 +611,7 @@ def estimate_condition_number(row_ptr_np, col_ind_np, vals_np, diag_np,
 
     return {
         'lambda_max': lambda_max,
-        'lambda_min': lambda_min * np.mean(np.abs(diag_np)),  # 元のスケールに戻す近似
+        'lambda_min': lambda_min * np.mean(np.abs(diag_np)),
         'condition_number': condition_number,
     }
 
@@ -773,21 +773,21 @@ def convert_raw_case_to_torch_case(rc, feat_mean, feat_std, x_mean, x_std, devic
         "edge_index": edge_index,
         "x_true": x_true,
         "x_true_norm": x_true_norm,
-        "has_x_true": has_x_true,  # 教師データの有無フラグ
+        "has_x_true": has_x_true,
         "b": b,
         "row_ptr": row_ptr,
         "col_ind": col_ind,
         "vals": vals,
         "row_idx": row_idx,
         "w_pde": w_pde,
-        "w_pde_np": w_pde_np,  # ★ 分布ログ用に numpy を保持しておく
-        "diag_sqrt": diag_sqrt,  # ★ 対角スケーリングの逆変換用
-        "diag_sqrt_np": diag_sqrt_np,  # ★ NumPy版も保持
-        "use_diagonal_scaling": use_diagonal_scaling,  # スケーリング適用フラグ
-        "volume": volume,  # ★ セル体積（ゲージ正則化用）
-        "diag": diag,  # ★ 対角成分（行ごと正規化用）
+        "w_pde_np": w_pde_np,
+        "diag_sqrt": diag_sqrt,
+        "diag_sqrt_np": diag_sqrt_np,
+        "use_diagonal_scaling": use_diagonal_scaling,
+        "volume": volume,
+        "diag": diag,
 
-        "coords_np": feats_np[:, 0:3].copy(),   # [x, y, z]
+        "coords_np": feats_np[:, 0:3].copy(),
         "skew_np": feats_np[:, 5].copy(),
         "non_ortho_np": feats_np[:, 6].copy(),
         "aspect_np": feats_np[:, 7].copy(),
@@ -825,8 +825,8 @@ def move_case_to_device(cs, device):
         "diag_sqrt": diag_sqrt.to(device, non_blocking=True) if diag_sqrt is not None else None,
         "diag_sqrt_np": cs.get("diag_sqrt_np"),
         "use_diagonal_scaling": cs.get("use_diagonal_scaling", False),
-        "volume": cs["volume"].to(device, non_blocking=True),  # ★ セル体積
-        "diag": cs["diag"].to(device, non_blocking=True),  # ★ 対角成分
+        "volume": cs["volume"].to(device, non_blocking=True),
+        "diag": cs["diag"].to(device, non_blocking=True),
         "coords_np": cs["coords_np"],
         "skew_np": cs["skew_np"],
         "non_ortho_np": cs["non_ortho_np"],
@@ -965,7 +965,7 @@ def init_plot():
     return fig, axes
 
 def update_plot(fig, axes, history):
-    ax_loss, ax_rel = axes  # 左：損失, 右：相対誤差
+    ax_loss, ax_rel = axes
 
     ax_loss.clear()
     ax_rel.clear()
@@ -1040,7 +1040,7 @@ def train_gnn_auto_trainval_pde_weighted(
     )
     log_path = os.path.join(OUTPUT_DIR, log_filename)
 
-    LOGGER_FILE = open(log_path, "w", buffering=1)  # 行バッファ
+    LOGGER_FILE = open(log_path, "w", buffering=1)
 
     start_time = time.time()
 
@@ -1263,7 +1263,7 @@ def train_gnn_auto_trainval_pde_weighted(
 
     if raw_cases_train:
         rc0 = raw_cases_train[0]
-        diag_np = rc0["feats_np"][:, 3]  # 対角成分
+        diag_np = rc0["feats_np"][:, 3]
 
         log_print("=== Condition number estimation (first training case) ===")
 
@@ -1303,7 +1303,7 @@ def train_gnn_auto_trainval_pde_weighted(
     ).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
     scheduler = None
-    scheduler_type = None  # "plateau" or "onecycle"
+    scheduler_type = None
     if USE_ONE_CYCLE_LR:
         scheduler = torch.optim.lr_scheduler.OneCycleLR(
             optimizer,
@@ -1311,8 +1311,8 @@ def train_gnn_auto_trainval_pde_weighted(
             total_steps=NUM_EPOCHS,
             pct_start=ONE_CYCLE_PCT_START,
             anneal_strategy='cos',
-            div_factor=ONE_CYCLE_MAX_LR / LR,  # 初期学習率 = max_lr / div_factor = LR
-            final_div_factor=1e4,  # 最終学習率 = max_lr / final_div_factor
+            div_factor=ONE_CYCLE_MAX_LR / LR,
+            final_div_factor=1e4,
         )
         scheduler_type = "onecycle"
         log_print(f"[INFO] OneCycleLR スケジューラが有効です (max_lr={ONE_CYCLE_MAX_LR})")
@@ -1359,9 +1359,9 @@ def train_gnn_auto_trainval_pde_weighted(
         "loss": [],
         "data_loss": [],
         "pde_loss": [],
-        "gauge_loss": [],  # ゲージ損失（教師なし学習時のみ）
+        "gauge_loss": [],
         "rel_err_train": [],
-        "rel_err_val": [],  # val が無いときは None
+        "rel_err_val": [],
     }
 
     best_val_metric = float('inf')
@@ -1387,7 +1387,7 @@ def train_gnn_auto_trainval_pde_weighted(
         sum_rel_err_tr  = 0.0
         sum_R_pred_tr   = 0.0
         sum_rmse_tr     = 0.0
-        num_cases_with_x = 0  # データ損失を計算したケース数
+        num_cases_with_x = 0
 
         for cs in cases_train:
             if USE_LAZY_LOADING:
@@ -1397,7 +1397,7 @@ def train_gnn_auto_trainval_pde_weighted(
 
             feats       = cs_gpu["feats"]
             edge_index  = cs_gpu["edge_index"]
-            x_true      = cs_gpu["x_true"]  # 教師なし学習の場合は None
+            x_true      = cs_gpu["x_true"]
             b           = cs_gpu["b"]
             row_ptr     = cs_gpu["row_ptr"]
             col_ind     = cs_gpu["col_ind"]
@@ -1407,8 +1407,8 @@ def train_gnn_auto_trainval_pde_weighted(
             has_x_true  = cs_gpu.get("has_x_true", x_true is not None)
             diag_sqrt   = cs_gpu.get("diag_sqrt", None)
             use_dscale  = cs_gpu.get("use_diagonal_scaling", False) and (diag_sqrt is not None)
-            volume      = cs_gpu["volume"]  # セル体積（ゲージ正則化用）
-            diag        = cs_gpu["diag"]    # 対角成分（行ごと正規化用）
+            volume      = cs_gpu["volume"]
+            diag        = cs_gpu["diag"]
 
 
             with torch.amp.autocast(device_type='cuda', enabled=use_amp_actual):
@@ -1541,7 +1541,7 @@ def train_gnn_auto_trainval_pde_weighted(
         if scheduler is not None:
             if scheduler_type == "onecycle":
                 scheduler.step()
-            else:  # "plateau"
+            else:
                 metric_for_scheduler = avg_rel_err_val if avg_rel_err_val is not None else float(loss_value)
                 scheduler.step(metric_for_scheduler)
 
@@ -1573,7 +1573,7 @@ def train_gnn_auto_trainval_pde_weighted(
 
         if epoch % PLOT_INTERVAL == 0 or epoch == 1:
             if unsupervised_mode or num_cases_with_x == 0:
-                avg_rel_err_tr = sum_R_pred_tr / num_train  # PDE 残差を代用
+                avg_rel_err_tr = sum_R_pred_tr / num_train
                 avg_rmse_tr    = 0.0
             else:
                 avg_rel_err_tr = sum_rel_err_tr / num_cases_with_x
@@ -1768,7 +1768,7 @@ def train_gnn_auto_trainval_pde_weighted(
             for i, val in enumerate(x_pred_np):
                 f.write(f"{i} {val:.9e}\n")
 
-        coords_np = cs["coords_np"]  # (N, 3): x, y, z
+        coords_np = cs["coords_np"]
 
         vtk_pred_path = os.path.join(OUTPUT_DIR, f"pressure_pred_train_{time_str}_rank{rank_str}.vtk")
         write_vtk_polydata(vtk_pred_path, coords_np, {"p_pred": x_pred_np})
@@ -1918,7 +1918,7 @@ def train_gnn_auto_trainval_pde_weighted(
                 for i, val in enumerate(x_pred_np):
                     f.write(f"{i} {val:.9e}\n")
 
-            coords_np = cs["coords_np"]  # (N, 3): x, y, z
+            coords_np = cs["coords_np"]
 
             vtk_pred_path = os.path.join(OUTPUT_DIR, f"pressure_pred_val_{time_str}_rank{rank_str}.vtk")
             write_vtk_polydata(vtk_pred_path, coords_np, {"p_pred": x_pred_np})
