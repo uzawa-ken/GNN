@@ -22,11 +22,8 @@ try:
     from torch_geometric.nn import SAGEConv
 except ImportError:
     raise RuntimeError(
-        "torch_geometric がインストールされていません。"
-        "pip install torch-geometric などでインストールしてください。"
+        "pip install torch-geometric が必要"
     )
-
-EPS = 1.0e-12
 
 DATA_DIR       = "./data"
 OUTPUT_DIR     = "./"
@@ -72,6 +69,7 @@ USE_MESH_QUALITY_WEIGHTS = True
 USE_DIAGONAL_SCALING = True
 PDE_LOSS_NORMALIZATION = "relative"
 
+EPS      = 1.0e-12
 EPS_DATA = 1e-12
 EPS_RES  = 1e-8
 EPS_PLOT = 1e-12
@@ -179,12 +177,12 @@ def save_raw_cases_to_cache(raw_cases: list, cache_path: str) -> None:
     os.makedirs(os.path.dirname(cache_path), exist_ok=True)
     with open(cache_path, "wb") as f:
         pickle.dump(raw_cases, f, protocol=pickle.HIGHEST_PROTOCOL)
-    log_print(f"[CACHE] データを {cache_path} にキャッシュしました")
+    log_print(f"[CACHE] データを {cache_path} にキャッシュ")
 
 def load_raw_cases_from_cache(cache_path: str) -> list:
     with open(cache_path, "rb") as f:
         raw_cases = pickle.load(f)
-    log_print(f"[CACHE] キャッシュ {cache_path} からデータを読み込みました")
+    log_print(f"[CACHE] キャッシュ {cache_path} からデータを読み込み")
     return raw_cases
 
 def compute_affine_fit(x_true_tensor, x_pred_tensor):
@@ -237,13 +235,13 @@ def load_case_with_csr(gnn_dir: str, time_str: str, rank_str: str):
         assert header_nf[0] == "nFaces"
         nCells = int(header_nc[1])
     except Exception as e:
-        raise RuntimeError(f"nCells/nFaces ヘッダの解釈に失敗しました: {p_path}\n{e}")
+        raise RuntimeError(f"nCells/nFaces ヘッダの解釈に失敗: {p_path}\n{e}")
 
     try:
         idx_cells = next(i for i, ln in enumerate(lines) if ln.startswith("CELLS"))
         idx_edges = next(i for i, ln in enumerate(lines) if ln.startswith("EDGES"))
     except StopIteration:
-        raise RuntimeError(f"CELLS/EDGES セクションが見つかりません: {p_path}")
+        raise RuntimeError(f"CELLS/EDGES セクションが見つからない: {p_path}")
 
     idx_wall = None
     for i, ln in enumerate(lines):
@@ -257,7 +255,7 @@ def load_case_with_csr(gnn_dir: str, time_str: str, rank_str: str):
     edge_lines = lines[idx_edges + 1: idx_wall]
 
     if len(cell_lines) != nCells:
-        log_print(f"[WARN] nCells={nCells} と CELLS 行数={len(cell_lines)} が異なります (time={time_str}).")
+        log_print(f"[WARN] nCells: {nCells} と CELLS 行数: {len(cell_lines)} が違う (time={time_str}).")
 
     feats_np = np.zeros((len(cell_lines), 13), dtype=np.float32)
     b_np     = np.zeros(len(cell_lines), dtype=np.float32)
@@ -265,7 +263,7 @@ def load_case_with_csr(gnn_dir: str, time_str: str, rank_str: str):
     for ln in cell_lines:
         parts = ln.split()
         if len(parts) < 14:
-            raise RuntimeError(f"CELLS 行の列数が足りません: {ln}")
+            raise RuntimeError(f"CELLS 行の列数が足りない: {ln}")
         cell_id = int(parts[0])
         xcoord  = float(parts[1])
         ycoord  = float(parts[2])
@@ -282,7 +280,7 @@ def load_case_with_csr(gnn_dir: str, time_str: str, rank_str: str):
         Co         = float(parts[13])
 
         if not (0 <= cell_id < len(cell_lines)):
-            raise RuntimeError(f"cell_id の範囲がおかしいです: {cell_id}")
+            raise RuntimeError(f"cell_id の範囲がおかしい: {cell_id}")
 
         feats_np[cell_id, :] = np.array(
             [
@@ -301,11 +299,11 @@ def load_case_with_csr(gnn_dir: str, time_str: str, rank_str: str):
         if parts[0] == "WALL_FACES":
             break
         if len(parts) != 5:
-            raise RuntimeError(f"EDGES 行の列数が 5 ではありません: {ln}")
+            raise RuntimeError(f"EDGES 行の列数が 5 ではない: {ln}")
         lower = int(parts[1])
         upper = int(parts[2])
         if not (0 <= lower < len(cell_lines) and 0 <= upper < len(cell_lines)):
-            raise RuntimeError(f"lower/upper の cell index が範囲外です: {ln}")
+            raise RuntimeError(f"lower/upper の cell index が範囲外: {ln}")
 
         e_src.append(lower)
         e_dst.append(upper)
@@ -326,11 +324,11 @@ def load_case_with_csr(gnn_dir: str, time_str: str, rank_str: str):
                     continue
                 parts = ln.split()
                 if len(parts) != 2:
-                    raise RuntimeError(f"x_*.dat の行形式が想定外です: {ln}")
+                    raise RuntimeError(f"x_*.dat の行形式が想定外: {ln}")
                 cid = int(parts[0])
                 val = float(parts[1])
                 if not (0 <= cid < len(cell_lines)):
-                    raise RuntimeError(f"x_*.dat の cell id が範囲外です: {cid}")
+                    raise RuntimeError(f"x_*.dat の cell id が範囲外: {cid}")
                 x_true_np[cid] = val
     else:
         x_true_np = None
@@ -349,17 +347,17 @@ def load_case_with_csr(gnn_dir: str, time_str: str, rank_str: str):
         nCols = int(h1[1])
         nnz   = int(h2[1])
     except Exception as e:
-        raise RuntimeError(f"A_csr_{time_str}.dat のヘッダ解釈に失敗しました: {csr_path}\n{e}")
+        raise RuntimeError(f"A_csr_{time_str}.dat のヘッダ解釈に失敗: {csr_path}\n{e}")
 
     if nRows != nCells:
-        log_print(f"[WARN] CSR nRows={nRows} と pEqn nCells={nCells} が異なります (time={time_str}).")
+        log_print(f"[WARN] CSR nRows={nRows} と pEqn nCells={nCells} が異なる (time={time_str}).")
 
     try:
         idx_rowptr = next(i for i, ln in enumerate(csr_lines) if ln.startswith("ROW_PTR"))
         idx_colind = next(i for i, ln in enumerate(csr_lines) if ln.startswith("COL_IND"))
         idx_vals   = next(i for i, ln in enumerate(csr_lines) if ln.startswith("VALUES"))
     except StopIteration:
-        raise RuntimeError(f"ROW_PTR/COL_IND/VALUES が見つかりません: {csr_path}")
+        raise RuntimeError(f"ROW_PTR/COL_IND/VALUES が見つからない: {csr_path}")
 
     row_ptr_str = csr_lines[idx_rowptr + 1].split()
     col_ind_str = csr_lines[idx_colind + 1].split()
@@ -367,15 +365,15 @@ def load_case_with_csr(gnn_dir: str, time_str: str, rank_str: str):
 
     if len(row_ptr_str) != nRows + 1:
         raise RuntimeError(
-            f"ROW_PTR の長さが nRows+1 と一致しません: len={len(row_ptr_str)}, nRows={nRows}"
+            f"ROW_PTR の長さが nRows+1 と一致しない: len: {len(row_ptr_str)}, nRows: {nRows}"
         )
     if len(col_ind_str) != nnz:
         raise RuntimeError(
-            f"COL_IND の長さが nnz と一致しません: len={len(col_ind_str)}, nnz={nnz}"
+            f"COL_IND の長さが nnz と一致しない: len: {len(col_ind_str)}, nnz: {nnz}"
         )
     if len(vals_str) != nnz:
         raise RuntimeError(
-            f"VALUES の長さが nnz と一致しません: len={len(vals_str)}, nnz={nnz}"
+            f"VALUES の長さが nnz と一致しない: len :{len(vals_str)}, nnz: {nnz}"
         )
 
     row_ptr_np = np.array(row_ptr_str, dtype=np.int64)
@@ -446,55 +444,6 @@ def matvec_csr_numpy(row_ptr, col_ind, vals, x):
     n = len(row_ptr) - 1
     A = csr_matrix((vals.astype(np.float64), col_ind, row_ptr), shape=(n, n))
     return A @ x.astype(np.float64)
-
-def estimate_condition_number(row_ptr_np, col_ind_np, vals_np, diag_np,
-                               max_iter=50, tol=1e-6):
-    n = len(row_ptr_np) - 1
-    eps = 1e-12
-
-    x = np.random.randn(n).astype(np.float64)
-    x = x / (np.linalg.norm(x) + eps)
-
-    lambda_max = 1.0
-    for _ in range(max_iter):
-        y = matvec_csr_numpy(row_ptr_np, col_ind_np, vals_np.astype(np.float64), x)
-        lambda_new = np.dot(x, y)
-        y_norm = np.linalg.norm(y) + eps
-        x_new = y / y_norm
-
-        if abs(lambda_new - lambda_max) / (abs(lambda_max) + eps) < tol:
-            lambda_max = abs(lambda_new)
-            break
-        lambda_max = abs(lambda_new)
-        x = x_new
-
-    x = np.random.randn(n).astype(np.float64)
-    x = x / (np.linalg.norm(x) + eps)
-
-    diag_inv = 1.0 / (np.abs(diag_np).astype(np.float64) + eps)
-
-    lambda_min = 1.0
-    for iteration in range(max_iter):
-        Ax = matvec_csr_numpy(row_ptr_np, col_ind_np, vals_np.astype(np.float64), x)
-        y = diag_inv * Ax
-
-        lambda_new = np.dot(x, y)
-        y_norm = np.linalg.norm(y) + eps
-        x_new = y / y_norm
-
-        if abs(lambda_new - lambda_min) / (abs(lambda_min) + eps) < tol:
-            lambda_min = abs(lambda_new)
-            break
-        lambda_min = abs(lambda_new)
-        x = x_new
-
-    condition_number = lambda_max / (lambda_min + eps)
-
-    return {
-        'lambda_max': lambda_max,
-        'lambda_min': lambda_min * np.mean(np.abs(diag_np)),
-        'condition_number': condition_number,
-    }
 
 def apply_diagonal_scaling_csr(row_ptr_np, col_ind_np, vals_np, diag_np, b_np):
     eps = 1e-12
@@ -856,22 +805,22 @@ def train_gnn_auto_trainval_pde_weighted(
 
     start_time = time.time()
 
-    log_print(f"[INFO] Logging to {log_path}")
-    log_print(f"[INFO] device = {device}")
+    log_print(f"[INFO] ログ: {log_path}")
+    log_print(f"[INFO] デバイス : {device}")
 
     all_time_rank_tuples, missing_info = find_time_rank_list(data_dir)
 
     if not all_time_rank_tuples:
         if missing_info.get("no_gnn_dirs"):
             raise RuntimeError(
-                f"{data_dir}/processor*/gnn/ ディレクトリが見つかりませんでした。"
+                f"{data_dir}/processor*/gnn/ ディレクトリが見つからない"
             )
 
         error_messages = []
         if missing_info.get("missing_csr"):
-            error_messages.append("A_csr_*.dat が見つかりませんでした。")
+            error_messages.append("A_csr_*.dat が見つからない")
         if not missing_info.get("missing_csr"):
-            error_messages.append("pEqn_*_rank*.dat が見つかりませんでした。")
+            error_messages.append("pEqn_*_rank*.dat が見つからない")
 
         if error_messages:
             raise RuntimeError(
@@ -879,19 +828,19 @@ def train_gnn_auto_trainval_pde_weighted(
             )
         else:
             raise RuntimeError(
-                f"{data_dir}/processor*/gnn/ 内に有効なデータが見つかりませんでした。"
+                f"{data_dir}/processor*/gnn/ 内にデータが見つからない"
             )
 
     if missing_info.get("missing_x"):
         num_missing_x = len(missing_info["missing_x"])
-        log_print(f"[WARN] x_*_rank*.dat が {num_missing_x} 件見つかりませんでした。教師なし学習モードで続行します。")
+        log_print(f"[WARN] x_*_rank*.dat が {num_missing_x} データ見つからないので、教師なし学習モードで続行")
 
     all_ranks = sorted(set(r for _, r, _ in all_time_rank_tuples), key=int)
     all_times_unique = sorted(set(t for t, _, _ in all_time_rank_tuples), key=float)
     all_gnn_dirs = sorted(set(g for _, _, g in all_time_rank_tuples))
-    log_print(f"[INFO] ranks: {all_ranks}")
-    log_print(f"[INFO] times: {all_times_unique[:10]}{'...' if len(all_times_unique) > 10 else ''}")
-    log_print(f"[INFO] gnn_dir: {len(all_gnn_dirs)}")
+    log_print(f"[INFO] ランク数: {all_ranks}")
+    log_print(f"[INFO] 時刻数: {all_times_unique[:10]}{'...' if len(all_times_unique) > 10 else ''}")
+    log_print(f"[INFO] ディレクトリ数: {len(all_gnn_dirs)}")
 
     random.seed(RANDOM_SEED)
     random.shuffle(all_time_rank_tuples)
@@ -904,17 +853,17 @@ def train_gnn_auto_trainval_pde_weighted(
     tuples_train = all_time_rank_tuples[:n_train]
     tuples_val   = all_time_rank_tuples[n_train:]
 
-    log_print(f"[INFO] 検出された (time, rank) ペア数 (使用分) = {n_total}")
-    log_print(f"[INFO] train: {n_train} cases, val: {n_val} cases (TRAIN_FRACTION={TRAIN_FRACTION})")
-    log_print("=== train data (time, rank) ===")
+    log_print(f"[INFO] (時刻, ランク番号) のペアの数: {n_total}")
+    log_print(f"[INFO] 訓練データ: {n_train} データ, テストデータ: {n_val} データ")
+    log_print("=== 訓練データ ===")
     for t, r, g in tuples_train:
-        log_print(f"  time={t}, rank={r}")
-    log_print("=== validation data (time, rank) ===")
+        log_print(f"  時刻:{t}, ランク番号:{r}")
+    log_print("=== テストデータ ===")
     if tuples_val:
         for t, r, g in tuples_val:
-            log_print(f"  time={t}, rank={r}")
+            log_print(f"  時刻:{t}, ランク番号:{r}")
     else:
-        log_print("  (val ケースなし)")
+        log_print("  (テストデータなし)")
     log_print("===========================================")
 
     raw_cases_all = []
@@ -924,7 +873,7 @@ def train_gnn_auto_trainval_pde_weighted(
         raw_cases_all = load_raw_cases_from_cache(cache_path)
     else:
         for t, r, g in all_time_rank_tuples:
-            log_print(f"[LOAD] time:{t}, rank:{r}")
+            log_print(f"[LOAD] 時刻:{t}, ランク番号:{r}")
             rc = load_case_with_csr(g, t, r)
             raw_cases_all.append(rc)
 
@@ -945,16 +894,16 @@ def train_gnn_auto_trainval_pde_weighted(
     nFeat = raw_cases_train[0]["feats_np"].shape[1]
     for rc in raw_cases_train + raw_cases_val:
         if rc["feats_np"].shape[1] != nFeat:
-            raise RuntimeError("全ケースで nFeatures が一致していません。")
+            raise RuntimeError("nFeatures が一致していない")
 
     total_cells = sum(rc["feats_np"].shape[0] for rc in raw_cases_train + raw_cases_val)
-    log_print(f"[INFO] nFeatures = {nFeat}, 総セル数 (全ケース合計) = {total_cells}")
+    log_print(f"[INFO] 特徴量数: {nFeat}, 総セル数: {total_cells}")
 
     cases_with_x = [rc for rc in (raw_cases_train + raw_cases_val) if rc.get("has_x_true", False)]
     unsupervised_mode = len(cases_with_x) == 0
 
     if unsupervised_mode:
-        log_print("[INFO] *** 教師なし学習モード（PINNs）: x_*_rank*.dat が見つかりません ***")
+        log_print("[INFO] *** 教師なし学習モード（PINNs）: x_*_rank*.dat が見つからない ***")
         log_print("[INFO] *** 損失関数は PDE 損失のみを使用 ***")
 
     all_feats = np.concatenate(
@@ -971,8 +920,8 @@ def train_gnn_auto_trainval_pde_weighted(
         x_mean = all_xtrue.mean()
         x_std  = all_xtrue.std() + 1e-12
         log_print(
-            f"[INFO] x_true (cases with ground truth): "
-            f"min={all_xtrue.min():.3e}, max={all_xtrue.max():.3e}, mean={x_mean:.3e}"
+            f"[INFO] x_true: "
+            f"min:{all_xtrue.min():.3e}, max:{all_xtrue.max():.3e}, mean:{x_mean:.3e}"
         )
     else:
         all_b = np.concatenate([rc["b_np"] for rc in raw_cases_train], axis=0)
@@ -984,7 +933,7 @@ def train_gnn_auto_trainval_pde_weighted(
         x_mean = 0.0
         x_std = b_rms / diag_rms
         log_print(
-            f"[INFO] x_true 統計: 教師なし学習モード（b と diag から推定）"
+            f"[INFO] x_true 統計: 教師なし学習モード"
             f" mean={x_mean:.3e}, std={x_std:.3e} (b_rms={b_rms:.3e}, diag_rms={diag_rms:.3e})"
         )
 
@@ -1019,11 +968,10 @@ def train_gnn_auto_trainval_pde_weighted(
             x_mean_rank[r] = mean_r
             x_std_rank[r]  = std_r
 
-    log_print("[INFO] rank-wise x_true statistics (train only):")
     for r in range(num_ranks):
         log_print(
-            f"  rank={r}: count={counts[r]}, "
-            f"mean={x_mean_rank[r]:.3e}, std={x_std_rank[r]:.3e}"
+            f"  ランク番号:{r}: カウント:{counts[r]}, "
+            f"平均:{x_mean_rank[r]:.3e}, 分散:{x_std_rank[r]:.3e}"
         )
 
     x_mean_rank_t = torch.from_numpy(x_mean_rank.astype(np.float32)).to(device)
@@ -1034,7 +982,7 @@ def train_gnn_auto_trainval_pde_weighted(
     w_all_list  = []
 
     if USE_LAZY_LOADING:
-        log_print("[INFO] 遅延 GPU 転送モード（データは CPU に保持し、使用時のみ GPU へ転送）")
+        log_print("[INFO] 遅延 GPU 転送モード（データを CPU に保持し使用時のみ GPU へ転送）")
 
     for rc in raw_cases_train:
         cs = convert_raw_case_to_torch_case(
@@ -1062,45 +1010,13 @@ def train_gnn_auto_trainval_pde_weighted(
         p90    = float(np.percentile(w_all, 90))
         p99    = float(np.percentile(w_all, 99))
 
-        log_print("=== w_pde (mesh-quality weights) statistics over all train+val cases ===")
-        log_print(f"  count = {w_all.size}")
-        log_print(f"  min   = {w_min:.3e}")
-        log_print(f"  mean  = {w_mean:.3e}")
-        log_print(f"  max   = {w_max:.3e}")
-        log_print(f"  p50   = {p50:.3e}")
-        log_print(f"  p90   = {p90:.3e}")
-        log_print(f"  p99   = {p99:.3e}")
-        log_print("==========================================================================")
-
-    if raw_cases_train:
-        rc0 = raw_cases_train[0]
-        diag_np = rc0["feats_np"][:, 3]
-
-        log_print("=== Condition number estimation (first training case) ===")
-
-        cond_before = estimate_condition_number(
-            rc0["row_ptr_np"], rc0["col_ind_np"], rc0["vals_np"], diag_np
-        )
-        log_print(f"  [Before scaling] λ_max = {cond_before['lambda_max']:.6e}, "
-                  f"λ_min = {cond_before['lambda_min']:.6e}, "
-                  f"κ(A) = {cond_before['condition_number']:.6e}")
-
-        if USE_DIAGONAL_SCALING:
-            vals_scaled, _, _ = apply_diagonal_scaling_csr(
-                rc0["row_ptr_np"], rc0["col_ind_np"], rc0["vals_np"], diag_np, rc0["b_np"]
-            )
-            diag_scaled = np.ones_like(diag_np)
-            cond_after = estimate_condition_number(
-                rc0["row_ptr_np"], rc0["col_ind_np"], vals_scaled, diag_scaled
-            )
-            log_print(f"  [After scaling]  λ_max = {cond_after['lambda_max']:.6e}, "
-                      f"λ_min = {cond_after['lambda_min']:.6e}, "
-                      f"κ(Ã) = {cond_after['condition_number']:.6e}")
-            improvement = cond_before['condition_number'] / (cond_after['condition_number'] + 1e-12)
-            log_print(f"  Condition number improvement: {improvement:.2f}x")
-        else:
-            log_print("  [Diagonal scaling disabled]")
-
+        log_print(f"  カウント : {w_all.size}")
+        log_print(f"  最小値   : {w_min:.3e}")
+        log_print(f"  平均値   : {w_mean:.3e}")
+        log_print(f"  最大値   : {w_max:.3e}")
+        log_print(f"  p50      : {p50:.3e}")
+        log_print(f"  p90      : {p90:.3e}")
+        log_print(f"  p99      : {p99:.3e}")
         log_print("==========================================================================")
 
     num_train = len(cases_train)
@@ -1126,7 +1042,7 @@ def train_gnn_auto_trainval_pde_weighted(
             final_div_factor=1e4,
         )
         scheduler_type = "onecycle"
-        log_print(f"[INFO] OneCycleLR スケジューラが有効です (max_lr={ONE_CYCLE_MAX_LR})")
+        log_print(f"[INFO] OneCycleLR スケジューラ: 有効")
     elif USE_LR_SCHEDULER:
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer,
@@ -1141,26 +1057,25 @@ def train_gnn_auto_trainval_pde_weighted(
     use_amp_actual = USE_AMP and device.type == "cuda"
     scaler = torch.amp.GradScaler(enabled=use_amp_actual)
     if use_amp_actual:
-        log_print("[INFO] 混合精度学習 (AMP) が有効です")
+        log_print("[INFO] 混合精度学習 (AMP) : 有効")
     else:
         if USE_AMP and device.type != "cuda":
-            log_print("[INFO] AMP は CUDA デバイスでのみ有効です。CPU モードでは無効化されます")
+            log_print("[INFO] AMP は CUDA のみ有効（CPU では無効）")
 
     if LAMBDA_DATA == 0 and LAMBDA_PDE == 0:
         raise ValueError(
-            "LAMBDA_DATA と LAMBDA_PDE が両方 0 です。"
-            "少なくとも一方は正の値を設定してください。"
+            "[ERROR] LAMBDA_DATA と LAMBDA_PDE が両方とも 0"
         )
 
     if LAMBDA_DATA == 0:
-        learning_mode = "完全な教師なし学習 (PDE損失のみ)"
+        learning_mode = "教師なし学習 (PDE 損失のみ)"
     elif LAMBDA_PDE == 0:
-        learning_mode = "完全な教師あり学習 (データ損失のみ)"
+        learning_mode = "教師あり学習 (データ損失のみ)"
     else:
-        learning_mode = "ハイブリッド学習 (データ損失 + PDE損失)"
+        learning_mode = "ハイブリッド学習"
 
-    log_print(f"=== Training start: {learning_mode} ===")
-    log_print(f"    LAMBDA_DATA={LAMBDA_DATA}, LAMBDA_PDE={LAMBDA_PDE}, LAMBDA_GAUGE={LAMBDA_GAUGE}")
+    log_print(f"=== {learning_mode} ===")
+    log_print(f"    データ損失の重み: {LAMBDA_DATA}, PDE 損失の重み: {LAMBDA_PDE}")
 
     fig, axes = (None, None)
     if enable_plot:
@@ -1181,7 +1096,7 @@ def train_gnn_auto_trainval_pde_weighted(
     epochs_without_improvement = 0
 
     if USE_EARLY_STOPPING:
-        log_print(f"[INFO] アーリーストッピングが有効です (patience={EARLY_STOPPING_PATIENCE})")
+        log_print(f"[INFO] アーリーストッピング: 有効 (patience: {EARLY_STOPPING_PATIENCE})")
 
     for epoch in range(1, NUM_EPOCHS + 1):
         model.train()
@@ -1409,19 +1324,19 @@ def train_gnn_auto_trainval_pde_weighted(
                 update_plot(fig, axes, history)
 
             log = (
-                f"[Epoch {epoch:5d}] loss={loss_value:.4e}, "
-                f"lr={current_lr:.3e}, "
-                f"data_loss={LAMBDA_DATA * avg_data_loss:.4e}, "
-                f"PDE_loss={LAMBDA_PDE * avg_pde_loss:.4e}, "
+                f"[Epoch: {epoch:5d}] ロス: {loss_value:.4e}, "
+                f"学習率: {current_lr:.3e}, "
+                f"データ損失: {LAMBDA_DATA * avg_data_loss:.4e}, "
+                f"PDE 損失: {LAMBDA_PDE * avg_pde_loss:.4e}, "
             )
             if unsupervised_mode or num_cases_with_x == 0:
                 log += f"gauge_loss={LAMBDA_GAUGE * avg_gauge_loss:.4e}, "
             log += (
-                f"rel_err_train(avg)={avg_rel_err_tr:.4e}, "
+                f"訓練誤差（相対誤差、平均値）: {avg_rel_err_tr:.4e}, "
             )
             if avg_rel_err_val is not None:
                 log += (
-                    f", rel_err_val(avg)={avg_rel_err_val:.4e} "
+                    f" テスト誤差（相対誤差、平均値）: {avg_rel_err_val:.4e} "
                 )
             log_print(log)
 
@@ -1442,7 +1357,7 @@ def train_gnn_auto_trainval_pde_weighted(
     m = int((elapsed % 3600) // 60)
     s = elapsed % 60.0
     log_print(
-        f"[INFO] Total elapsed time: {elapsed:.2f} s "
+        f"[INFO] 計算時間: {elapsed:.2f} s "
         f"(~{h:02d}:{m:02d}:{s:05.2f})"
     )
 

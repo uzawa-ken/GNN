@@ -110,7 +110,7 @@ def _extract_best_val_error(history: dict) -> tuple:
             float(pde_losses[last_idx]),
         )
 
-    raise RuntimeError("学習履歴が空のため評価指標を取得できませんでした。")
+    raise RuntimeError("学習履歴が空のため評価指標を取得不可能")
 
 def objective(
     trial: optuna.Trial,
@@ -367,8 +367,7 @@ def main() -> None:
 
     if args.lambda_data_min == 0 and args.lambda_pde_min == 0 and args.lambda_data_max == 0 and args.lambda_pde_max == 0:
         raise ValueError(
-            "lambda_data と lambda_pde が両方とも 0 に固定されています。"
-            "少なくとも一方は正の値を設定してください。"
+            "lambda_data と lambda_pde が両方とも 0 に設定"
         )
 
     print(f"[INFO] lambda_data: [{args.lambda_data_min}, {args.lambda_data_max}]")
@@ -394,9 +393,8 @@ def main() -> None:
         show_progress_bar=True,
     )
 
-    print("=== Best trial ===")
-    print(f"  value (min val rel err): {study.best_trial.value:.4e}")
-    print("  params:")
+    print(f"  最良のテスト誤差の値: {study.best_trial.value:.4e}")
+    print("  ハイパーパラメータ:")
     for k, v in study.best_trial.params.items():
         print(f"    {k}: {v}")
 
