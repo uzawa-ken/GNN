@@ -1,22 +1,3 @@
-"""簡易的な Optuna によるハイパーパラメータ探索スクリプト。
-
-最終検証誤差（相対誤差）の最小値を目的関数とし、
-`GNN_train_val_weight.py` のハイパーパラメータを自動調整します。
-
-主な特徴:
-- 学習率、Weight Decay、損失の重み（LAMBDA_DATA / LAMBDA_PDE）、GNN の隠れチャネル数 / 層数を探索
-- 学習曲線の描画は無効化して高速化
-- 返却される検証誤差の最小値を Optuna が最小化
-- 乱数シードと train/val 分割比率を引数で指定して再現性を確保
-
-実行例:
-    python hyperparameter_search_optuna.py --trials 20 --data_dir ./data
-
-注意:
-- Optuna がインストールされていない場合は `pip install optuna` を実行してください。
-- 本スクリプトは 1 試行につき `GNN_train_val_weight.py` と同じ学習を行うため、
-  試行回数を増やすと計算コストが増えます。少ない試行から始めてください。
-"""
 
 from __future__ import annotations
 
@@ -36,7 +17,6 @@ except ImportError as exc:
 
 import GNN_train_val_weight as gnn
 
-
 def _set_global_params(
     *,
     lr: float,
@@ -54,7 +34,6 @@ def _set_global_params(
     use_grad_clip: bool = True,
     pde_loss_normalization: str = "relative",
 ) -> None:
-    """GNN トレーニングスクリプトのグローバル設定を上書きするヘルパー。"""
 
     gnn.LR = lr
     gnn.WEIGHT_DECAY = weight_decay
@@ -71,9 +50,7 @@ def _set_global_params(
     gnn.USE_GRAD_CLIP = use_grad_clip
     gnn.PDE_LOSS_NORMALIZATION = pde_loss_normalization
 
-
 def _initialize_log_file(log_file: Path) -> None:
-    """ハイパーパラメータ探索ログ用のテキストファイルを作成する。"""
 
     log_file.parent.mkdir(parents=True, exist_ok=True)
     header = (
@@ -83,7 +60,6 @@ def _initialize_log_file(log_file: Path) -> None:
 
     if not log_file.exists():
         log_file.write_text(header, encoding="utf-8")
-
 
 def _append_trial_result(
     log_file: Path,
@@ -99,7 +75,6 @@ def _append_trial_result(
     hidden_channels: int,
     num_layers: int,
 ) -> None:
-    """試行結果をテキストファイルへ逐次追記する。"""
 
     _initialize_log_file(log_file)
     line = (
@@ -111,13 +86,7 @@ def _append_trial_result(
     with log_file.open("a", encoding="utf-8") as f:
         f.write(line)
 
-
 def _extract_best_val_error(history: dict) -> tuple:
-    """学習履歴から最良の検証相対誤差とその時点のデータ損失・PDE損失を取り出す。
-
-    Returns:
-        tuple: (val_error, data_loss, pde_loss)
-    """
 
     val_errors = history["rel_err_val"]
     data_losses = history["data_loss"]
@@ -143,7 +112,6 @@ def _extract_best_val_error(history: dict) -> tuple:
 
     raise RuntimeError("学習履歴が空のため評価指標を取得できませんでした。")
 
-
 def objective(
     trial: optuna.Trial,
     data_dir: str,
@@ -159,7 +127,6 @@ def objective(
     lambda_pde_min: float,
     lambda_pde_max: float,
 ) -> float:
-    """Optuna 用の目的関数。"""
 
     lr = trial.suggest_float(name="lr", low=1e-4, high=1e-2, log=True)
     weight_decay = trial.suggest_float(name="weight_decay", low=1e-6, high=1e-3, log=True)
@@ -230,7 +197,6 @@ def objective(
         num_layers=num_layers,
     )
     return val_error
-
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Optuna によるハイパーパラメータ探索")
@@ -453,7 +419,6 @@ def main() -> None:
         enable_plot=False,
         return_history=False,
     )
-
 
 if __name__ == "__main__":
     main()
