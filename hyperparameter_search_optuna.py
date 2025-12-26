@@ -1,0 +1,497 @@
+"""簡易的な Optuna によるハイパーパラメータ探索スクリプト。
+
+最終検証誤差（相対誤差）の最小値を目的関数とし、
+`GNN_train_val_weight.py` のハイパーパラメータを自動調整します。
+
+主な特徴:
+- 学習率、Weight Decay、損失の重み（LAMBDA_DATA / LAMBDA_PDE）、GNN の隠れチャネル数 / 層数を探索
+- 学習曲線の描画は無効化して高速化
+- 返却される検証誤差の最小値を Optuna が最小化
+- 乱数シードと train/val 分割比率を引数で指定して再現性を確保
+
+実行例:
+    python hyperparameter_search_optuna.py --trials 20 --data_dir ./data
+
+注意:
+- Optuna がインストールされていない場合は `pip install optuna` を実行してください。
+- 本スクリプトは 1 試行につき `GNN_train_val_weight.py` と同じ学習を行うため、
+  試行回数を増やすと計算コストが増えます。少ない試行から始めてください。
+"""
+
+from __future__ import annotations
+
+import argparse
+import random
+from pathlib import Path
+from typing import List
+
+import numpy as np
+
+try:
+    import optuna
+except ImportError as exc:  # pragma: no cover - ユーザー環境でのみ発生しうるため
+    raise RuntimeError(
+        "pip install optuna!"
+    ) from exc
+
+import GNN_train_val_weight as gnn
+
+
+def _set_global_params(
+    *,
+    lr: float,
+    weight_decay: float,
+    lambda_data: float,
+    lambda_pde: float,
+    lambda_gauge: float,
+    hidden_channels: int,
+    num_layers: int,
+    num_epochs: int,
+    train_fraction: float,
+    max_num_cases: int,
+    random_seed: int,
+    use_lr_warmup: bool = True,
+    use_grad_clip: bool = True,
+    pde_loss_normalization: str = "relative",
+) -> None:
+    """GNN トレーニングスクリプトのグローバル設定を上書きするヘルパー。"""
+
+    gnn.LR = lr
+    gnn.WEIGHT_DECAY = weight_decay
+    gnn.LAMBDA_DATA = lambda_data
+    gnn.LAMBDA_PDE = lambda_pde
+    gnn.LAMBDA_GAUGE = lambda_gauge
+    gnn.HIDDEN_CHANNELS = hidden_channels
+    gnn.NUM_LAYERS = num_layers
+    gnn.NUM_EPOCHS = num_epochs
+    gnn.TRAIN_FRACTION = train_fraction
+    gnn.MAX_NUM_CASES = max_num_cases
+    gnn.RANDOM_SEED = random_seed
+    gnn.USE_LR_WARMUP = use_lr_warmup
+    gnn.USE_GRAD_CLIP = use_grad_clip
+    gnn.PDE_LOSS_NORMALIZATION = pde_loss_normalization
+
+
+def _initialize_log_file(log_file: Path) -> None:
+    """ハイパーパラメータ探索ログ用のテキストファイルを作成する。"""
+
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    header = (
+        "# trial\tval_error\tdata_loss\tpde_loss\tlr\tweight_decay\tlambda_data\t"
+        "lambda_pde\thidden_channels\tnum_layers\n"
+    )
+
+    if not log_file.exists():
+        log_file.write_text(header, encoding="utf-8")
+
+
+def _append_trial_result(
+    log_file: Path,
+    trial_number: int,
+    val_error: float,
+    data_loss: float,
+    pde_loss: float,
+    *,
+    lr: float,
+    weight_decay: float,
+    lambda_data: float,
+    lambda_pde: float,
+    hidden_channels: int,
+    num_layers: int,
+) -> None:
+    """試行結果をテキストファイルへ逐次追記する。"""
+
+    _initialize_log_file(log_file)
+    line = (
+        f"{trial_number}\t{val_error:.6e}\t{data_loss:.6e}\t{pde_loss:.6e}\t"
+        f"{lr:.6e}\t{weight_decay:.6e}\t"
+        f"{lambda_data:.6e}\t{lambda_pde:.6e}\t{hidden_channels}\t{num_layers}\n"
+    )
+
+    with log_file.open("a", encoding="utf-8") as f:
+        f.write(line)
+
+
+def _extract_best_val_error(history: dict) -> tuple:
+    """学習履歴から最良の検証相対誤差とその時点のデータ損失・PDE損失を取り出す。
+
+    Returns:
+        tuple: (val_error, data_loss, pde_loss)
+    """
+
+    val_errors = history["rel_err_val"]
+    data_losses = history["data_loss"]
+    pde_losses = history["pde_loss"]
+
+    # val_error が None でないインデックスを探す
+    valid_indices = [i for i, v in enumerate(val_errors) if v is not None]
+
+    if valid_indices:
+        # 最良の検証誤差を出したエポックを特定
+        best_idx = min(valid_indices, key=lambda i: val_errors[i])
+        return (
+            float(val_errors[best_idx]),
+            float(data_losses[best_idx]),
+            float(pde_losses[best_idx]),
+        )
+
+    # 検証データが無い場合は最終エポックの値を使用
+    if history["rel_err_train"]:
+        last_idx = len(history["rel_err_train"]) - 1
+        return (
+            float(history["rel_err_train"][last_idx]),
+            float(data_losses[last_idx]),
+            float(pde_losses[last_idx]),
+        )
+
+    raise RuntimeError("学習履歴が空のため評価指標を取得できませんでした。")
+
+
+def objective(
+    trial: optuna.Trial,
+    data_dir: str,
+    num_epochs: int,
+    max_num_cases: int,
+    train_fraction: float,
+    random_seed: int,
+    log_file: Path,
+    lambda_gauge: float,
+    search_lambda_gauge: bool,
+    lambda_data_min: float,
+    lambda_data_max: float,
+    lambda_pde_min: float,
+    lambda_pde_max: float,
+) -> float:
+    """Optuna 用の目的関数。"""
+
+    # サンプルするハイパーパラメータ
+    lr = trial.suggest_float(name="lr", low=1e-4, high=1e-2, log=True)
+    weight_decay = trial.suggest_float(name="weight_decay", low=1e-6, high=1e-3, log=True)
+
+    # lambda_data の決定
+    # min == max == 0 の場合は固定値 0（完全な教師なし学習）
+    # min == max > 0 の場合は固定値
+    # min < max の場合は探索（log scale）
+    if lambda_data_min == 0 and lambda_data_max == 0:
+        lambda_data = 0.0
+    elif lambda_data_min == lambda_data_max:
+        lambda_data = lambda_data_min
+    elif lambda_data_min > 0:
+        lambda_data = trial.suggest_float(name="lambda_data", low=lambda_data_min, high=lambda_data_max, log=True)
+    else:
+        # min == 0 but max > 0: 線形スケールで探索（log scale は 0 を含められない）
+        lambda_data = trial.suggest_float(name="lambda_data", low=lambda_data_min, high=lambda_data_max, log=False)
+
+    # lambda_pde の決定（同様のロジック）
+    if lambda_pde_min == 0 and lambda_pde_max == 0:
+        lambda_pde = 0.0
+    elif lambda_pde_min == lambda_pde_max:
+        lambda_pde = lambda_pde_min
+    elif lambda_pde_min > 0:
+        lambda_pde = trial.suggest_float(name="lambda_pde", low=lambda_pde_min, high=lambda_pde_max, log=True)
+    else:
+        # min == 0 but max > 0: 線形スケールで探索
+        lambda_pde = trial.suggest_float(name="lambda_pde", low=lambda_pde_min, high=lambda_pde_max, log=False)
+
+    hidden_channels = trial.suggest_int("hidden_channels", 32, 256, log=True)
+    num_layers = trial.suggest_int("num_layers", 3, 7)
+
+    # ゲージ正則化係数（教師なし学習時の定数モード抑制用）
+    if search_lambda_gauge:
+        lambda_gauge_val = trial.suggest_float(
+            name="lambda_gauge", low=1e-4, high=1.0, log=True
+        )
+    else:
+        lambda_gauge_val = lambda_gauge
+
+    _set_global_params(
+        lr=lr,
+        weight_decay=weight_decay,
+        lambda_data=lambda_data,
+        lambda_pde=lambda_pde,
+        lambda_gauge=lambda_gauge_val,
+        hidden_channels=hidden_channels,
+        num_layers=num_layers,
+        num_epochs=num_epochs,
+        train_fraction=train_fraction,
+        max_num_cases=max_num_cases,
+        random_seed=random_seed,
+    )
+
+    # 乱数シードをそろえて再現性を確保
+    random.seed(random_seed)
+    np.random.seed(random_seed)
+
+    # 学習を実行（プロットなし）
+    history = gnn.train_gnn_auto_trainval_pde_weighted(
+        data_dir,
+        enable_plot=False,          # 探索中はリアルタイムプロットもオフ
+        return_history=True,
+    )
+
+    # 目的関数として最小検証相対誤差を返す
+    val_error, data_loss, pde_loss = _extract_best_val_error(history)
+    _append_trial_result(
+        log_file,
+        trial.number,
+        val_error,
+        data_loss,
+        pde_loss,
+        lr=lr,
+        weight_decay=weight_decay,
+        lambda_data=lambda_data,
+        lambda_pde=lambda_pde,
+        hidden_channels=hidden_channels,
+        num_layers=num_layers,
+    )
+    return val_error
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Optuna によるハイパーパラメータ探索")
+    parser.add_argument("--data_dir", default=gnn.DATA_DIR, help="学習データのディレクトリ")
+    parser.add_argument("--trials", type=int, default=10, help="試行回数")
+    parser.add_argument("--num_epochs", type=int, default=200, help="1 試行あたりのエポック数")
+    parser.add_argument(
+        "--max_num_cases",
+        type=int,
+        default=30,
+        help="探索時に使用する (time, rank) ペアの最大件数",
+    )
+    parser.add_argument(
+        "--train_fraction",
+        type=float,
+        default=0.8,
+        help="探索時の train/val 分割比率",
+    )
+    parser.add_argument(
+        "--random_seed",
+        type=int,
+        default=42,
+        help="乱数シード（Optuna と学習の再現性用）",
+    )
+    parser.add_argument(
+        "--log_file",
+        type=Path,
+        default=Path("optuna_trials_history.tsv"),
+        help="試行番号と検証誤差を逐次追記するログファイルのパス",
+    )
+    parser.add_argument(
+        "--lazy_loading",
+        action="store_true",
+        default=True,
+        help="遅延GPU転送を有効化（デフォルト: 有効）",
+    )
+    parser.add_argument(
+        "--no_lazy_loading",
+        action="store_true",
+        help="遅延GPU転送を無効化",
+    )
+    parser.add_argument(
+        "--amp",
+        action="store_true",
+        default=True,
+        help="混合精度学習 (AMP) を有効化（デフォルト: 有効）",
+    )
+    parser.add_argument(
+        "--no_amp",
+        action="store_true",
+        help="混合精度学習 (AMP) を無効化",
+    )
+    parser.add_argument(
+        "--cache",
+        action="store_true",
+        default=True,
+        help="データキャッシュを有効化（デフォルト: 有効）",
+    )
+    parser.add_argument(
+        "--no_cache",
+        action="store_true",
+        help="データキャッシュを無効化（毎回ファイルから読み込む）",
+    )
+    parser.add_argument(
+        "--cache_dir",
+        type=str,
+        default=".cache",
+        help="キャッシュファイルの保存先ディレクトリ（デフォルト: .cache）",
+    )
+    parser.add_argument(
+        "--lambda_gauge",
+        type=float,
+        default=0.01,
+        help="ゲージ正則化係数（教師なし学習時の定数モード抑制用、デフォルト: 0.01）",
+    )
+    parser.add_argument(
+        "--search_lambda_gauge",
+        action="store_true",
+        help="ゲージ正則化係数も Optuna で探索する",
+    )
+    parser.add_argument(
+        "--no_mesh_quality_weights",
+        action="store_true",
+        help="メッシュ品質重みを無効化（全セル等重み w=1）",
+    )
+    parser.add_argument(
+        "--no_diagonal_scaling",
+        action="store_true",
+        help="対角スケーリングを無効化（条件数改善を行わない）",
+    )
+    # lambda_data の探索範囲
+    parser.add_argument(
+        "--lambda_data_min",
+        type=float,
+        default=1e-3,
+        help="lambda_data の探索下限（デフォルト: 1e-3）。0 を指定すると固定値 0（完全な教師なし学習）",
+    )
+    parser.add_argument(
+        "--lambda_data_max",
+        type=float,
+        default=1.0,
+        help="lambda_data の探索上限（デフォルト: 1.0）",
+    )
+    # lambda_pde の探索範囲
+    parser.add_argument(
+        "--lambda_pde_min",
+        type=float,
+        default=0.0,
+        help="lambda_pde の探索下限（デフォルト: 0.01）。0 を指定すると固定値 0（完全な教師あり学習）",
+    )
+    parser.add_argument(
+        "--lambda_pde_max",
+        type=float,
+        default=0.0,
+        help="lambda_pde の探索上限（デフォルト: 10.0）",
+    )
+    # アーリーストッピング
+    parser.add_argument(
+        "--early_stopping",
+        action="store_true",
+        default=True,
+        help="アーリーストッピングを有効化（デフォルト: 有効）",
+    )
+    parser.add_argument(
+        "--no_early_stopping",
+        action="store_true",
+        help="アーリーストッピングを無効化",
+    )
+    parser.add_argument(
+        "--early_stopping_patience",
+        type=int,
+        default=50,
+        help="アーリーストッピングの patience（デフォルト: 50）",
+    )
+    # OneCycleLR
+    parser.add_argument(
+        "--use_one_cycle_lr",
+        action="store_true",
+        help="OneCycleLR スケジューラを使用（高速収束用）",
+    )
+    parser.add_argument(
+        "--one_cycle_max_lr",
+        type=float,
+        default=1e-2,
+        help="OneCycleLR の最大学習率（デフォルト: 1e-2）",
+    )
+
+    args = parser.parse_args()
+
+    # メモリ効率化オプションの設定
+    gnn.USE_LAZY_LOADING = not args.no_lazy_loading
+    gnn.USE_AMP = not args.no_amp
+
+    # データキャッシュオプションの設定
+    gnn.USE_DATA_CACHE = not args.no_cache
+    gnn.CACHE_DIR = args.cache_dir
+
+    # メッシュ品質重みオプションの設定
+    gnn.USE_MESH_QUALITY_WEIGHTS = not args.no_mesh_quality_weights
+
+    # 対角スケーリングオプションの設定
+    gnn.USE_DIAGONAL_SCALING = not args.no_diagonal_scaling
+
+    # アーリーストッピングの設定
+    gnn.USE_EARLY_STOPPING = not args.no_early_stopping
+    gnn.EARLY_STOPPING_PATIENCE = args.early_stopping_patience
+
+    # OneCycleLR の設定
+    gnn.USE_ONE_CYCLE_LR = args.use_one_cycle_lr
+    gnn.ONE_CYCLE_MAX_LR = args.one_cycle_max_lr
+    if args.use_one_cycle_lr:
+        gnn.USE_LR_SCHEDULER = False  # ReduceLROnPlateau を無効化
+
+    sampler = optuna.samplers.TPESampler(seed=args.random_seed)
+    study = optuna.create_study(direction="minimize", sampler=sampler)
+
+    # ログファイルを探索開始前に準備
+    _initialize_log_file(args.log_file)
+
+    # lambda 範囲の検証
+    if args.lambda_data_min == 0 and args.lambda_pde_min == 0 and args.lambda_data_max == 0 and args.lambda_pde_max == 0:
+        raise ValueError(
+            "lambda_data と lambda_pde が両方とも 0 に固定されています。"
+            "少なくとも一方は正の値を設定してください。"
+        )
+
+    print(f"[INFO] lambda_data: [{args.lambda_data_min}, {args.lambda_data_max}]")
+    print(f"[INFO] lambda_pde: [{args.lambda_pde_min}, {args.lambda_pde_max}]")
+
+    # Optuna 探索本体
+    study.optimize(
+        lambda trial: objective(
+            trial,
+            args.data_dir,
+            args.num_epochs,
+            args.max_num_cases,
+            args.train_fraction,
+            args.random_seed,
+            args.log_file,
+            args.lambda_gauge,
+            args.search_lambda_gauge,
+            args.lambda_data_min,
+            args.lambda_data_max,
+            args.lambda_pde_min,
+            args.lambda_pde_max,
+        ),
+        n_trials=args.trials,
+        show_progress_bar=True,
+    )
+
+    # ベストトライアル情報を表示
+    print("=== Best trial ===")
+    print(f"  value (min val rel err): {study.best_trial.value:.4e}")
+    print("  params:")
+    for k, v in study.best_trial.params.items():
+        print(f"    {k}: {v}")
+
+    # ============================================================
+    # ★ ベストトライアルのハイパーパラメータで 1 回だけ再学習し、
+    #    このときだけ誤差場プロットを出す
+    # ============================================================
+    best = study.best_trial
+
+    # gnn 側のグローバル設定を引数に合わせて再セット
+    gnn.NUM_EPOCHS      = args.num_epochs
+    gnn.MAX_NUM_CASES   = args.max_num_cases
+    gnn.TRAIN_FRACTION  = args.train_fraction
+    gnn.RANDOM_SEED     = args.random_seed
+
+    # ベストトライアルのハイパーパラメータを gnn 側に反映
+    # lambda_data, lambda_pde は固定値の場合は best.params に含まれないため、
+    # .get() でデフォルト値（args で指定した固定値）を使用
+    gnn.LR              = best.params["lr"]
+    gnn.WEIGHT_DECAY    = best.params["weight_decay"]
+    gnn.LAMBDA_DATA     = best.params.get("lambda_data", args.lambda_data_min)
+    gnn.LAMBDA_PDE      = best.params.get("lambda_pde", args.lambda_pde_min)
+    gnn.HIDDEN_CHANNELS = best.params["hidden_channels"]
+    gnn.NUM_LAYERS      = best.params["num_layers"]
+
+    # ベスト設定で最終学習を実行
+    gnn.train_gnn_auto_trainval_pde_weighted(
+        args.data_dir,
+        enable_plot=False,          # 学習曲線のポップアップが不要なら False
+        return_history=False,       # ここでは履歴は使わないので False
+    )
+
+
+if __name__ == "__main__":
+    main()
