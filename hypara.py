@@ -15,7 +15,7 @@ except ImportError as exc:
         "pip install optuna!"
     ) from exc
 
-import GNN_train_val_weight as gnn
+import GNN as gnn
 
 def _set_global_params(
     *,
@@ -275,7 +275,7 @@ def main() -> None:
     parser.add_argument(
         "--lambda_data_min",
         type=float,
-        default=1e-3,
+        default=1.0,
     )
     parser.add_argument(
         "--lambda_data_max",
@@ -396,3 +396,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
