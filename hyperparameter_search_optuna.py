@@ -123,11 +123,9 @@ def _extract_best_val_error(history: dict) -> tuple:
     data_losses = history["data_loss"]
     pde_losses = history["pde_loss"]
 
-    # val_error が None でないインデックスを探す
     valid_indices = [i for i, v in enumerate(val_errors) if v is not None]
 
     if valid_indices:
-        # 最良の検証誤差を出したエポックを特定
         best_idx = min(valid_indices, key=lambda i: val_errors[i])
         return (
             float(val_errors[best_idx]),
@@ -135,7 +133,6 @@ def _extract_best_val_error(history: dict) -> tuple:
             float(pde_losses[best_idx]),
         )
 
-    # 検証データが無い場合は最終エポックの値を使用
     if history["rel_err_train"]:
         last_idx = len(history["rel_err_train"]) - 1
         return (
@@ -164,14 +161,9 @@ def objective(
 ) -> float:
     """Optuna 用の目的関数。"""
 
-    # サンプルするハイパーパラメータ
     lr = trial.suggest_float(name="lr", low=1e-4, high=1e-2, log=True)
     weight_decay = trial.suggest_float(name="weight_decay", low=1e-6, high=1e-3, log=True)
 
-    # lambda_data の決定
-    # min == max == 0 の場合は固定値 0（完全な教師なし学習）
-    # min == max > 0 の場合は固定値
-    # min < max の場合は探索（log scale）
     if lambda_data_min == 0 and lambda_data_max == 0:
         lambda_data = 0.0
     elif lambda_data_min == lambda_data_max:
@@ -179,10 +171,8 @@ def objective(
     elif lambda_data_min > 0:
         lambda_data = trial.suggest_float(name="lambda_data", low=lambda_data_min, high=lambda_data_max, log=True)
     else:
-        # min == 0 but max > 0: 線形スケールで探索（log scale は 0 を含められない）
         lambda_data = trial.suggest_float(name="lambda_data", low=lambda_data_min, high=lambda_data_max, log=False)
 
-    # lambda_pde の決定（同様のロジック）
     if lambda_pde_min == 0 and lambda_pde_max == 0:
         lambda_pde = 0.0
     elif lambda_pde_min == lambda_pde_max:
@@ -190,13 +180,11 @@ def objective(
     elif lambda_pde_min > 0:
         lambda_pde = trial.suggest_float(name="lambda_pde", low=lambda_pde_min, high=lambda_pde_max, log=True)
     else:
-        # min == 0 but max > 0: 線形スケールで探索
         lambda_pde = trial.suggest_float(name="lambda_pde", low=lambda_pde_min, high=lambda_pde_max, log=False)
 
     hidden_channels = trial.suggest_int("hidden_channels", 32, 256, log=True)
     num_layers = trial.suggest_int("num_layers", 3, 7)
 
-    # ゲージ正則化係数（教師なし学習時の定数モード抑制用）
     if search_lambda_gauge:
         lambda_gauge_val = trial.suggest_float(
             name="lambda_gauge", low=1e-4, high=1.0, log=True
@@ -218,18 +206,15 @@ def objective(
         random_seed=random_seed,
     )
 
-    # 乱数シードをそろえて再現性を確保
     random.seed(random_seed)
     np.random.seed(random_seed)
 
-    # 学習を実行（プロットなし）
     history = gnn.train_gnn_auto_trainval_pde_weighted(
         data_dir,
         enable_plot=False,          # 探索中はリアルタイムプロットもオフ
         return_history=True,
     )
 
-    # 目的関数として最小検証相対誤差を返す
     val_error, data_loss, pde_loss = _extract_best_val_error(history)
     _append_trial_result(
         log_file,
@@ -336,7 +321,6 @@ def main() -> None:
         action="store_true",
         help="対角スケーリングを無効化（条件数改善を行わない）",
     )
-    # lambda_data の探索範囲
     parser.add_argument(
         "--lambda_data_min",
         type=float,
@@ -349,7 +333,6 @@ def main() -> None:
         default=1.0,
         help="lambda_data の探索上限（デフォルト: 1.0）",
     )
-    # lambda_pde の探索範囲
     parser.add_argument(
         "--lambda_pde_min",
         type=float,
@@ -362,7 +345,6 @@ def main() -> None:
         default=0.0,
         help="lambda_pde の探索上限（デフォルト: 10.0）",
     )
-    # アーリーストッピング
     parser.add_argument(
         "--early_stopping",
         action="store_true",
@@ -380,7 +362,6 @@ def main() -> None:
         default=50,
         help="アーリーストッピングの patience（デフォルト: 50）",
     )
-    # OneCycleLR
     parser.add_argument(
         "--use_one_cycle_lr",
         action="store_true",
@@ -395,25 +376,19 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    # メモリ効率化オプションの設定
     gnn.USE_LAZY_LOADING = not args.no_lazy_loading
     gnn.USE_AMP = not args.no_amp
 
-    # データキャッシュオプションの設定
     gnn.USE_DATA_CACHE = not args.no_cache
     gnn.CACHE_DIR = args.cache_dir
 
-    # メッシュ品質重みオプションの設定
     gnn.USE_MESH_QUALITY_WEIGHTS = not args.no_mesh_quality_weights
 
-    # 対角スケーリングオプションの設定
     gnn.USE_DIAGONAL_SCALING = not args.no_diagonal_scaling
 
-    # アーリーストッピングの設定
     gnn.USE_EARLY_STOPPING = not args.no_early_stopping
     gnn.EARLY_STOPPING_PATIENCE = args.early_stopping_patience
 
-    # OneCycleLR の設定
     gnn.USE_ONE_CYCLE_LR = args.use_one_cycle_lr
     gnn.ONE_CYCLE_MAX_LR = args.one_cycle_max_lr
     if args.use_one_cycle_lr:
@@ -422,10 +397,8 @@ def main() -> None:
     sampler = optuna.samplers.TPESampler(seed=args.random_seed)
     study = optuna.create_study(direction="minimize", sampler=sampler)
 
-    # ログファイルを探索開始前に準備
     _initialize_log_file(args.log_file)
 
-    # lambda 範囲の検証
     if args.lambda_data_min == 0 and args.lambda_pde_min == 0 and args.lambda_data_max == 0 and args.lambda_pde_max == 0:
         raise ValueError(
             "lambda_data と lambda_pde が両方とも 0 に固定されています。"
@@ -435,7 +408,6 @@ def main() -> None:
     print(f"[INFO] lambda_data: [{args.lambda_data_min}, {args.lambda_data_max}]")
     print(f"[INFO] lambda_pde: [{args.lambda_pde_min}, {args.lambda_pde_max}]")
 
-    # Optuna 探索本体
     study.optimize(
         lambda trial: objective(
             trial,
@@ -456,28 +428,19 @@ def main() -> None:
         show_progress_bar=True,
     )
 
-    # ベストトライアル情報を表示
     print("=== Best trial ===")
     print(f"  value (min val rel err): {study.best_trial.value:.4e}")
     print("  params:")
     for k, v in study.best_trial.params.items():
         print(f"    {k}: {v}")
 
-    # ============================================================
-    # ★ ベストトライアルのハイパーパラメータで 1 回だけ再学習し、
-    #    このときだけ誤差場プロットを出す
-    # ============================================================
     best = study.best_trial
 
-    # gnn 側のグローバル設定を引数に合わせて再セット
     gnn.NUM_EPOCHS      = args.num_epochs
     gnn.MAX_NUM_CASES   = args.max_num_cases
     gnn.TRAIN_FRACTION  = args.train_fraction
     gnn.RANDOM_SEED     = args.random_seed
 
-    # ベストトライアルのハイパーパラメータを gnn 側に反映
-    # lambda_data, lambda_pde は固定値の場合は best.params に含まれないため、
-    # .get() でデフォルト値（args で指定した固定値）を使用
     gnn.LR              = best.params["lr"]
     gnn.WEIGHT_DECAY    = best.params["weight_decay"]
     gnn.LAMBDA_DATA     = best.params.get("lambda_data", args.lambda_data_min)
@@ -485,7 +448,6 @@ def main() -> None:
     gnn.HIDDEN_CHANNELS = best.params["hidden_channels"]
     gnn.NUM_LAYERS      = best.params["num_layers"]
 
-    # ベスト設定で最終学習を実行
     gnn.train_gnn_auto_trainval_pde_weighted(
         args.data_dir,
         enable_plot=False,          # 学習曲線のポップアップが不要なら False
