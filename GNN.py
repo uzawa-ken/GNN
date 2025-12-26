@@ -35,39 +35,39 @@ TRAIN_FRACTION = 0.8
 HIDDEN_CHANNELS = 64
 NUM_LAYERS      = 4
 
-USE_LR_SCHEDULER = True
-LR_SCHED_FACTOR = 0.5
+USE_LR_SCHEDULER  = True
+LR_SCHED_FACTOR   = 0.5
 LR_SCHED_PATIENCE = 20
-LR_SCHED_MIN_LR = 1e-6
+LR_SCHED_MIN_LR   = 1e-6
 
-USE_ONE_CYCLE_LR = False
-ONE_CYCLE_MAX_LR = 1e-2
+USE_ONE_CYCLE_LR    = False
+ONE_CYCLE_MAX_LR    = 1e-2
 ONE_CYCLE_PCT_START = 0.3
 
-USE_EARLY_STOPPING = True
-EARLY_STOPPING_PATIENCE = 50
+USE_EARLY_STOPPING       = True
+EARLY_STOPPING_PATIENCE  = 50
 EARLY_STOPPING_MIN_DELTA = 1e-6
 
-USE_LR_WARMUP = True
+USE_LR_WARMUP    = True
 LR_WARMUP_EPOCHS = 10
 
-USE_GRAD_CLIP = True
+USE_GRAD_CLIP      = True
 GRAD_CLIP_MAX_NORM = 1.0
 
 USE_LAZY_LOADING = True
-USE_AMP = True
+USE_AMP          = True
 
 USE_DATA_CACHE = True
-CACHE_DIR = ".cache"
+CACHE_DIR      = ".cache"
 
-LAMBDA_DATA = 0.1
-LAMBDA_PDE  = 0.01
+LAMBDA_DATA  = 0.1
+LAMBDA_PDE   = 0.01
 LAMBDA_GAUGE = 0.01
 
-W_PDE_MAX = 10.0
+W_PDE_MAX                = 10.0
 USE_MESH_QUALITY_WEIGHTS = True
-USE_DIAGONAL_SCALING = True
-PDE_LOSS_NORMALIZATION = "relative"
+USE_DIAGONAL_SCALING     = True
+PDE_LOSS_NORMALIZATION   = "relative"
 
 EPS      = 1.0e-12
 EPS_DATA = 1e-12
@@ -280,7 +280,7 @@ def load_case_with_csr(gnn_dir: str, time_str: str, rank_str: str):
         Co         = float(parts[13])
 
         if not (0 <= cell_id < len(cell_lines)):
-            raise RuntimeError(f"cell_id の範囲がおかしい: {cell_id}")
+            raise RuntimeError(f"cell_id の範囲が想定外: {cell_id}")
 
         feats_np[cell_id, :] = np.array(
             [
@@ -347,7 +347,7 @@ def load_case_with_csr(gnn_dir: str, time_str: str, rank_str: str):
         nCols = int(h1[1])
         nnz   = int(h2[1])
     except Exception as e:
-        raise RuntimeError(f"A_csr_{time_str}.dat のヘッダ解釈に失敗: {csr_path}\n{e}")
+        raise RuntimeError(f"A_csr_{time_str}.dat のヘッダが想定外: {csr_path}\n{e}")
 
     if nRows != nCells:
         log_print(f"[WARN] CSR nRows={nRows} と pEqn nCells={nCells} が異なる (time={time_str}).")
@@ -764,7 +764,7 @@ def update_plot(fig, axes, history):
 
     ax_loss.plot(epochs, loss_safe,      label="総損失",      linewidth=2)
     ax_loss.plot(epochs, data_loss_safe, label="データ損失",  linewidth=1.5, linestyle="--")
-    ax_loss.plot(epochs, pde_loss_safe,  label="PDE損失",    linewidth=1.5, linestyle="--")
+    ax_loss.plot(epochs, pde_loss_safe,  label="PDE 損失",    linewidth=1.5, linestyle="--")
 
     ax_loss.set_xlabel("エポック数")
     ax_loss.set_ylabel("損失")
