@@ -846,7 +846,7 @@ def train_gnn_auto_trainval_pde_weighted(
     all_times_unique = sorted(set(t for t, _, _ in all_time_rank_tuples), key=float)
     all_gnn_dirs = sorted(set(g for _, _, g in all_time_rank_tuples))
     log_print(f"[INFO] ランク数: {all_ranks}")
-    log_print(f"[INFO] 時刻数: {all_times_unique[:10]}{'...' if len(all_times_unique) > 10 else ''}")
+    log_print(f"[INFO] 時刻の組: {all_times_unique[:10]}{'...' if len(all_times_unique) > 10 else ''}")
     log_print(f"[INFO] ディレクトリ数: {len(all_gnn_dirs)}")
 
     random.seed(RANDOM_SEED)
@@ -989,7 +989,7 @@ def train_gnn_auto_trainval_pde_weighted(
     w_all_list  = []
 
     if USE_LAZY_LOADING:
-        log_print("[INFO] 遅延 GPU 転送モード（データを CPU に保持し使用時のみ GPU へ転送）")
+        log_print("[INFO] データを CPU に格納し、必要時のみ GPU へ転送")
 
     for rc in raw_cases_train:
         cs = convert_raw_case_to_torch_case(
@@ -1331,7 +1331,7 @@ def train_gnn_auto_trainval_pde_weighted(
                 update_plot(fig, axes, history)
 
             log = (
-                f"[エポック: {epoch:5d}] ロス: {loss_value:.4e}, "
+                f"[エポック: {epoch:5d}] 総損失（データ損失 + PDE 損失）: {loss_value:.4e}, "
                 f"学習率: {current_lr:.3e}, "
                 f"データ損失: {LAMBDA_DATA * avg_data_loss:.4e}, "
                 f"PDE 損失: {LAMBDA_PDE * avg_pde_loss:.4e}, "
@@ -1441,7 +1441,7 @@ def train_gnn_auto_trainval_pde_weighted(
 
         if has_x_true and x_true is not None:
             log_print(
-                f"時刻: {time_str}, ランク番号: {rank_str}): "
+                f"時刻: {time_str}, ランク番号: {rank_str}: "
                 f"相対誤差: {rel_err.item():.4e}, RMSE: {rmse.item():.4e}, "
                 f"重み付き残差: {R_pred_w.item():.4e}"
             )
@@ -1449,11 +1449,9 @@ def train_gnn_auto_trainval_pde_weighted(
                   f"平均: {x_true.mean().item():.6e}, ノルム: {torch.norm(x_true).item():.6e}")
             log_print(f"    予測値最小値: {x_pred.min().item():.6e}, 予測値最大値: {x_pred.max().item():.6e}, "
                   f"平均: {x_pred.mean().item():.6e}, ノルム={torch.norm(x_pred).item():.6e}")
-            log_print(f"    正規化予測値最小値: {x_pred_norm.min().item():.6e}, "
-                  f"正規化予測値最大値:{x_pred_norm.max().item():.6e}, 平均: {x_pred_norm.mean().item():.6e}")
+            log_print(f"    予測値最小値（正規化量）: {x_pred_norm.min().item():.6e}, "
+                  f"予測値最大値（正規化量）:{x_pred_norm.max().item():.6e}, 予測値平均（正規化量）: {x_pred_norm.mean().item():.6e}")
             log_print(f"    差分 (予測値 - 真値): ノルム={torch.norm(diff).item():.6e}")
-            log_print(f"    正規化パラメータの平均: {x_mean_t.item():.6e}, 標準偏差: {x_std_t.item():.6e}")
-
             log_print("    [PDE 残差の比較 (OpenFOAM との比較)]")
             log_print(
                 "      GNN 予測: "
@@ -1583,19 +1581,17 @@ def train_gnn_auto_trainval_pde_weighted(
 
             if has_x_true and x_true is not None:
                 log_print(
-                    f"時刻: {time_str}, ランク番号: {rank_str}): "
+                    f"時刻: {time_str}, ランク番号: {rank_str}: "
                     f"相対誤差: {rel_err.item():.4e}, RMSE: {rmse.item():.4e}, "
                     f"重み付き残差: {R_pred_w.item():.4e}"
                 )
                 log_print(f"真値最小値: {x_true.min().item():.6e}, 真値最大値: {x_true.max().item():.6e}, "
                       f"平均: {x_true.mean().item():.6e}, ノルム: {torch.norm(x_true).item():.6e}")
                 log_print(f"予測値最小値: {x_pred.min().item():.6e}, 予測値最大値: {x_pred.max().item():.6e}, "
-                      f"平均: {x_pred.mean().item():.6e}, ノルム: {torch.norm(x_pred).item():.6e}")
-                log_print(f"正規化予測値最小値: {x_pred_norm.min().item():.6e}, "
-                      f"正規化予測値最大値: {x_pred_norm.max().item():.6e}, 平均: {x_pred_norm.mean().item():.6e}")
+                      f"予測値平均: {x_pred.mean().item():.6e}, ノルム: {torch.norm(x_pred).item():.6e}")
+                log_print(f"予測値最小値（正規化量）: {x_pred_norm.min().item():.6e}, "
+                      f"予測値最大値（正規化量）: {x_pred_norm.max().item():.6e}, 平均: {x_pred_norm.mean().item():.6e}")
                 log_print(f"差分 (予測値 - 真値): ノルム: {torch.norm(diff).item():.6e}")
-                log_print(f"正規化パラメータ: 平均: {x_mean_t.item():.6e}, 標準偏差: {x_std_t.item():.6e}")
-
                 log_print("    [PDE 残差の比較 (OpenFOAM との比較)]")
                 log_print(
                     "      GNN 予測: "
