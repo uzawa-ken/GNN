@@ -1,20 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""
-train_gnn_auto_trainval_pde_weighted.py
-
-- DATA_DIR 内から自動的に pEqn_*_rank*.dat を走査し、
-  全ての (time, rank) ペアを最大 MAX_NUM_CASES 件まで自動生成。
-- 複数プロセス（rank）のデータを統合して学習。
-- その (time, rank) リストを train/val に分割して学習。
-- 損失は data loss (相対二乗誤差) + mesh-quality-weighted PDE loss。
-- 追加: pressure のゲージ自由度（定数モード）を hard constraint として除去（centered投影）。
-- 学習中に、loss / data_loss / PDE_loss / rel_err_train / rel_err_val を
-  リアルタイムにポップアップ表示。
-
-"""
-
 import os
 import random
 import numpy as np
@@ -41,7 +27,6 @@ except ImportError:
     )
 
 EPS = 1.0e-12
-
 
 DATA_DIR       = "./data"
 OUTPUT_DIR     = "./"
@@ -98,38 +83,16 @@ PLOT_INTERVAL = 10
 LOGGER_FILE = None
 
 def log_print(msg: str):
-    """標準出力とログファイル（あれば）の両方に同じメッセージを出力する。"""
     print(msg)
     global LOGGER_FILE
     if LOGGER_FILE is not None:
         print(msg, file=LOGGER_FILE)
         LOGGER_FILE.flush()
 
-
 import re
 import glob
 
 def find_time_rank_list(data_dir: str):
-    """
-    DATA_DIR/processor*/gnn/ 内から全ての pEqn_{time}_rank{rank}.dat を走査し、
-    対応する A_csr_{time}.dat が存在する (time, rank, gnn_dir) タプルのリストを返す。
-    x_{time}_rank{rank}.dat は教師なし学習モードでは省略可能。
-
-    ディレクトリ構造:
-        data/
-        ├── processor2/gnn/
-        │   ├── A_csr_{time}.dat
-        │   ├── pEqn_{time}_rank2.dat
-        │   └── x_{time}_rank2.dat
-        ├── processor4/gnn/
-        │   └── ...
-        └── ...
-
-    Returns:
-        tuple: (time_rank_tuples, missing_files_info)
-            - time_rank_tuples: 有効な (time, rank, gnn_dir) タプルのリスト
-            - missing_files_info: 見つからなかったファイルの情報（辞書）
-    """
     time_rank_tuples = []
     pattern = re.compile(r"^pEqn_(.+)_rank(\d+)\.dat$")
 
@@ -181,29 +144,15 @@ def find_time_rank_list(data_dir: str):
 
     return time_rank_tuples, missing_info
 
-
-
 def _compute_cache_key(data_dir: str, time_rank_tuples: list) -> str:
-    """
-    キャッシュのキー（ハッシュ）を計算する。
-    データディレクトリと (time, rank, gnn_dir) タプルのリストから一意のキーを生成。
-    """
     key_str = data_dir + "|" + str(sorted(time_rank_tuples))
     return hashlib.md5(key_str.encode()).hexdigest()[:16]
 
-
 def _get_cache_path(data_dir: str, time_rank_tuples: list) -> str:
-    """キャッシュファイルのパスを取得する。"""
     cache_key = _compute_cache_key(data_dir, time_rank_tuples)
     return os.path.join(CACHE_DIR, f"raw_cases_{cache_key}.pkl")
 
-
 def _is_cache_valid(cache_path: str, time_rank_tuples: list) -> bool:
-    """
-    キャッシュが有効かどうかを確認する。
-    - キャッシュファイルが存在するか
-    - ソースファイルよりキャッシュが新しいか
-    """
     if not os.path.exists(cache_path):
         return False
 
@@ -226,46 +175,19 @@ def _is_cache_valid(cache_path: str, time_rank_tuples: list) -> bool:
 
     return True
 
-
 def save_raw_cases_to_cache(raw_cases: list, cache_path: str) -> None:
-    """raw_cases をキャッシュファイルに保存する。"""
     os.makedirs(os.path.dirname(cache_path), exist_ok=True)
     with open(cache_path, "wb") as f:
         pickle.dump(raw_cases, f, protocol=pickle.HIGHEST_PROTOCOL)
     log_print(f"[CACHE] データを {cache_path} にキャッシュしました")
 
-
 def load_raw_cases_from_cache(cache_path: str) -> list:
-    """キャッシュファイルから raw_cases を読み込む。"""
     with open(cache_path, "rb") as f:
         raw_cases = pickle.load(f)
     log_print(f"[CACHE] キャッシュ {cache_path} からデータを読み込みました")
     return raw_cases
 
-
 def compute_affine_fit(x_true_tensor, x_pred_tensor):
-    """
-    x_true ≈ a * x_pred + b となるように、
-    最小二乗で a, b を求める簡易診断用関数。
-
-    Parameters
-    ----------
-    x_true_tensor : torch.Tensor, shape (N,)
-        物理スケールの真値（正規化解除後）
-    x_pred_tensor : torch.Tensor, shape (N,)
-        物理スケールの予測値（正規化解除後）
-
-    Returns
-    -------
-    a : float
-        最適スケール係数
-    b : float
-        最適バイアス
-    rmse_before : float
-        補正前 RMSE = sqrt(mean((x_pred - x_true)^2))
-    rmse_after : float
-        補正後 RMSE = sqrt(mean((a*x_pred + b - x_true)^2))
-    """
     xp = x_pred_tensor.detach().cpu().double().view(-1).numpy()
     yt = x_true_tensor.detach().cpu().double().view(-1).numpy()
 
@@ -291,17 +213,7 @@ def compute_affine_fit(x_true_tensor, x_pred_tensor):
 
     return a, b, rmse_before, rmse_after
 
-
-
 def load_case_with_csr(gnn_dir: str, time_str: str, rank_str: str):
-    """
-    指定された gnn_dir から (time, rank) に対応するデータを読み込む。
-
-    ファイル形式:
-        - pEqn_{time}_rank{rank}.dat
-        - x_{time}_rank{rank}.dat
-        - A_csr_{time}.dat または A_csr_{time}_rank{rank}.dat
-    """
     p_path   = os.path.join(gnn_dir, f"pEqn_{time_str}_rank{rank_str}.dat")
     x_path   = os.path.join(gnn_dir, f"x_{time_str}_rank{rank_str}.dat")
 
@@ -491,14 +403,7 @@ def load_case_with_csr(gnn_dir: str, time_str: str, rank_str: str):
         "row_idx_np": row_idx_np,
     }
 
-
 class SimpleSAGE(nn.Module):
-    """
-    改善版 GraphSAGE モデル。
-    - LayerNorm による正規化
-    - 残差接続（Skip connections）
-    - 入力射影層（入力次元を隠れ次元に合わせる）
-    """
     def __init__(self, in_channels: int, hidden_channels: int = 64, num_layers: int = 4):
         super().__init__()
         self.num_layers = num_layers
@@ -528,12 +433,7 @@ class SimpleSAGE(nn.Module):
         x = self.convs[-1](x, edge_index)
         return x.view(-1)
 
-
 def matvec_csr_torch(row_ptr, col_ind, vals, row_idx, x):
-    """
-    CSR 形式の疎行列とベクトルの積を計算する。
-    AMP 使用時に型の不一致が発生する場合は、自動的に型を揃える。
-    """
     if x.dtype != vals.dtype:
         x = x.to(vals.dtype)
 
@@ -542,32 +442,13 @@ def matvec_csr_torch(row_ptr, col_ind, vals, row_idx, x):
     y.index_add_(0, row_idx, vals * x[col_ind])
     return y
 
-
 def matvec_csr_numpy(row_ptr, col_ind, vals, x):
-    """NumPy版のCSR行列-ベクトル積（scipy.sparse使用）"""
     n = len(row_ptr) - 1
     A = csr_matrix((vals.astype(np.float64), col_ind, row_ptr), shape=(n, n))
     return A @ x.astype(np.float64)
 
-
 def estimate_condition_number(row_ptr_np, col_ind_np, vals_np, diag_np,
                                max_iter=50, tol=1e-6):
-    """
-    べき乗法で行列の条件数を推定する。
-
-    Args:
-        row_ptr_np, col_ind_np, vals_np: CSR形式の行列
-        diag_np: 対角成分（逆べき乗法の前処理用）
-        max_iter: 最大反復回数
-        tol: 収束判定の閾値
-
-    Returns:
-        dict: {
-            'lambda_max': 最大固有値（絶対値）,
-            'lambda_min': 最小固有値（絶対値）,
-            'condition_number': 条件数
-        }
-    """
     n = len(row_ptr_np) - 1
     eps = 1e-12
 
@@ -615,25 +496,7 @@ def estimate_condition_number(row_ptr_np, col_ind_np, vals_np, diag_np,
         'condition_number': condition_number,
     }
 
-
 def apply_diagonal_scaling_csr(row_ptr_np, col_ind_np, vals_np, diag_np, b_np):
-    """
-    対角スケーリングを CSR 行列と右辺ベクトルに適用する。
-
-    A_scaled = D^(-1/2) * A * D^(-1/2)
-    b_scaled = D^(-1/2) * b
-
-    Args:
-        row_ptr_np, col_ind_np, vals_np: CSR形式の行列
-        diag_np: 対角成分
-        b_np: 右辺ベクトル
-
-    Returns:
-        tuple: (vals_scaled_np, b_scaled_np, diag_sqrt_np)
-            - vals_scaled_np: スケーリング後の行列値
-            - b_scaled_np: スケーリング後の右辺ベクトル
-            - diag_sqrt_np: sqrt(|diag|)（逆変換用）
-    """
     eps = 1e-12
     n = len(diag_np)
 
@@ -648,22 +511,9 @@ def apply_diagonal_scaling_csr(row_ptr_np, col_ind_np, vals_np, diag_np, b_np):
 
     return vals_scaled, b_scaled, diag_sqrt
 
-
-
 def build_w_pde_from_feats(feats_np: np.ndarray,
                            w_pde_max: float = W_PDE_MAX,
                            use_mesh_quality_weights: bool = USE_MESH_QUALITY_WEIGHTS) -> np.ndarray:
-    """
-    メッシュ品質に基づくPDE損失の重みを計算
-
-    Args:
-        feats_np: 特徴量配列 (N, 13)
-        w_pde_max: 重みの最大値
-        use_mesh_quality_weights: Trueならメッシュ品質重みを計算、Falseなら全セル等重み(w=1)
-
-    Returns:
-        重みベクトル (N,)
-    """
     n_cells = feats_np.shape[0]
 
     if not use_mesh_quality_weights:
@@ -696,21 +546,8 @@ def build_w_pde_from_feats(feats_np: np.ndarray,
 
     return w_clipped.astype(np.float32)
 
-
 def convert_raw_case_to_torch_case(rc, feat_mean, feat_std, x_mean, x_std, device, lazy_load=False,
                                     use_diagonal_scaling=USE_DIAGONAL_SCALING):
-    """
-    raw_case を torch テンソルに変換する。
-
-    Parameters
-    ----------
-    lazy_load : bool
-        True の場合、データを CPU 上に保持し、GPU への転送は行わない。
-        学習時に move_case_to_device() で必要なときだけ GPU に転送する。
-    use_diagonal_scaling : bool
-        True の場合、対角スケーリングを適用して条件数を改善する。
-        A_scaled = D^(-1/2) * A * D^(-1/2), b_scaled = D^(-1/2) * b
-    """
     feats_np  = rc["feats_np"]
     x_true_np = rc["x_true_np"]
     has_x_true = rc.get("has_x_true", x_true_np is not None)
@@ -794,13 +631,7 @@ def convert_raw_case_to_torch_case(rc, feat_mean, feat_std, x_mean, x_std, devic
         "size_jump_np": feats_np[:, 11].copy(),
     }
 
-
 def move_case_to_device(cs, device):
-    """
-    ケースデータを指定デバイスに転送する（遅延ロード用）。
-    non_blocking=True で非同期転送を行い、オーバーヘッドを軽減。
-    x_true が None の場合（教師なし学習）も対応。
-    """
     x_true = cs["x_true"]
     x_true_norm = cs["x_true_norm"]
     has_x_true = cs.get("has_x_true", x_true is not None)
@@ -834,7 +665,6 @@ def move_case_to_device(cs, device):
         "size_jump_np": cs["size_jump_np"],
     }
 
-
 def evaluate_validation_cases(
     model,
     cases_val,
@@ -843,12 +673,6 @@ def evaluate_validation_cases(
     x_mean_t,
     use_amp_actual,
 ):
-    """
-    検証データに対する評価を行う共通関数。
-
-    Returns:
-        tuple: (avg_rel_err_val, avg_rmse_val, avg_R_pred_val, num_val_with_x)
-    """
     num_val = len(cases_val)
     if num_val == 0:
         return None, None, None, 0
@@ -918,16 +742,7 @@ def evaluate_validation_cases(
 
     return avg_rel_err_val, avg_rmse_val, avg_R_pred_val, num_val_with_x
 
-
 def write_vtk_polydata(filepath, coords, scalars_dict):
-    """
-    VTK Legacy形式（POLYDATA）でポイントデータを出力する。
-
-    Args:
-        filepath: 出力ファイルパス（.vtk）
-        coords: 座標配列 (N, 3)
-        scalars_dict: スカラーデータの辞書 {"name": array, ...}
-    """
     n_points = coords.shape[0]
 
     with open(filepath, "w") as f:
@@ -950,8 +765,6 @@ def write_vtk_polydata(filepath, coords, scalars_dict):
             f.write("LOOKUP_TABLE default\n")
             for val in data:
                 f.write(f"{val:.9e}\n")
-
-
 
 def init_plot():
     plt.ion()
@@ -1015,7 +828,6 @@ def update_plot(fig, axes, history):
     fig.tight_layout(rect=[0.05, 0.05, 0.95, 0.90])
 
     plt.pause(0.01)
-
 
 def train_gnn_auto_trainval_pde_weighted(
     data_dir: str,
@@ -1104,7 +916,6 @@ def train_gnn_auto_trainval_pde_weighted(
     else:
         log_print("  (val ケースなし)")
     log_print("===========================================")
-
 
     raw_cases_all = []
     cache_path = _get_cache_path(data_dir, all_time_rank_tuples) if USE_DATA_CACHE else None
@@ -1410,7 +1221,6 @@ def train_gnn_auto_trainval_pde_weighted(
             volume      = cs_gpu["volume"]
             diag        = cs_gpu["diag"]
 
-
             with torch.amp.autocast(device_type='cuda', enabled=use_amp_actual):
                 x_pred_norm = model(feats, edge_index)
                 x_pred = x_pred_norm * x_std_t + x_mean_t
@@ -1570,7 +1380,6 @@ def train_gnn_auto_trainval_pde_weighted(
                     log_print(f"[INFO] ベストモデル (epoch={best_epoch}) を復元しました。")
                 break
 
-
         if epoch % PLOT_INTERVAL == 0 or epoch == 1:
             if unsupervised_mode or num_cases_with_x == 0:
                 avg_rel_err_tr = sum_R_pred_tr / num_train
@@ -1615,7 +1424,6 @@ def train_gnn_auto_trainval_pde_weighted(
                     f", rel_err_val(avg)={avg_rel_err_val:.4e} "
                 )
             log_print(log)
-
 
     if enable_plot and len(history["epoch"]) > 0:
         final_plot_filename = (
@@ -1947,4 +1755,3 @@ def train_gnn_auto_trainval_pde_weighted(
 
 if __name__ == "__main__":
     train_gnn_auto_trainval_pde_weighted(DATA_DIR)
-
