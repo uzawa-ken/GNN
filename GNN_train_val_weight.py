@@ -417,19 +417,21 @@ class SimpleSAGE(nn.Module):
             self.convs.append(SAGEConv(hidden_channels, hidden_channels))
             self.norms.append(nn.LayerNorm(hidden_channels))
 
+        self.output_norm = nn.LayerNorm(hidden_channels)
         self.convs.append(SAGEConv(hidden_channels, 1))
 
     def forward(self, x, edge_index):
         x = self.input_proj(x)
-        x = F.relu(x)
+        x = F.gelu(x)
 
         for i, (conv, norm) in enumerate(zip(self.convs[:-1], self.norms)):
             x_res = x
-            x = conv(x, edge_index)
             x = norm(x)
-            x = F.relu(x)
+            x = conv(x, edge_index)
+            x = F.gelu(x)
             x = x + x_res
 
+        x = self.output_norm(x)
         x = self.convs[-1](x, edge_index)
         return x.view(-1)
 
